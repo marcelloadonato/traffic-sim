@@ -15,7 +15,12 @@ class Vehicle:
         
         # Movement timing
         self.position_time = 0         # Time spent at current position
-        self.position_threshold = 30   # Ticks to spend at each position
+        self.position_threshold = 60   # Ticks to spend at each position (slower for better visibility)
+        
+        # Physical properties
+        self.length = 20               # Length of vehicle in pixels
+        self.width = 12                # Width of vehicle in pixels
+        self.stopped_for_collision = False  # Flag to track if stopped due to collision
         
         # New attributes for enhanced visualization
         self.color = None              # Will be assigned in main.py
@@ -25,10 +30,12 @@ class Vehicle:
         # Adjust size based on vehicle type
         if self.vehicle_type == "truck":
             self.size_multiplier = 1.4
-            self.position_threshold = 40  # Trucks move slower
+            self.position_threshold = 80  # Trucks move slower
+            self.length = 30           # Trucks are longer
         elif self.vehicle_type == "van":
             self.size_multiplier = 1.2
-            self.position_threshold = 35  # Vans move a bit slower
+            self.position_threshold = 70  # Vans move a bit slower
+            self.length = 25           # Vans are medium length
             
         # Animation attributes
         self.animation_offset = 0      # For small movement animations
@@ -89,7 +96,8 @@ class Vehicle:
                 
             if self.waiting_time % 5 == 0:  # Decrease satisfaction every 5 ticks
                 self.satisfaction = max(0, self.satisfaction - 1)
-                print(f"Vehicle satisfaction decreased to {self.satisfaction}")
+                if self.waiting_time % 20 == 0:  # Only print every 20 ticks to reduce spam
+                    print(f"Vehicle satisfaction decreased to {self.satisfaction}")
         elif self.state == "moving" or self.state == "waiting":
             # If was waiting but now can move
             if self.state == "waiting":
@@ -102,9 +110,36 @@ class Vehicle:
             
             # Move to next position if we've been at this one long enough
             if self.position_time >= self.position_threshold:
-                self.move_one_step()
-                self.position_time = 0
-                print(f"Vehicle moved to {self.position}")
+                # Check if we can move (no collision)
+                if not self.check_collision_ahead():
+                    self.move_one_step()
+                    self.position_time = 0
+                    self.stopped_for_collision = False
+                    print(f"Vehicle moved to {self.position}")
+                else:
+                    # We're stopped due to a vehicle ahead
+                    if not self.stopped_for_collision:
+                        print(f"Vehicle stopped due to traffic ahead")
+                        self.stopped_for_collision = True
+                    
+                    # Decrease satisfaction if stopped for too long
+                    if self.stopped_for_collision and self.position_time % 20 == 0:
+                        self.satisfaction = max(0, self.satisfaction - 1)
+                        print(f"Vehicle satisfaction decreased to {self.satisfaction} (traffic jam)")
+    
+    def check_collision_ahead(self):
+        """Check if there's a vehicle ahead that would cause a collision"""
+        # If we're at the end of our route, no collision possible
+        if self.route.index(self.position) >= len(self.route) - 1:
+            return False
+            
+        # Get the next position in our route
+        next_position = self.route[self.route.index(self.position) + 1]
+        
+        # This function will be implemented in main.py and passed the vehicle and next_position
+        # For now, we'll return False (no collision)
+        # The actual implementation will be in main.py's check_collision function
+        return False  # Placeholder - will be overridden by main.py
     
     def _should_stop_at_red(self):
         """Determine if this vehicle should stop at a red light based on its route."""

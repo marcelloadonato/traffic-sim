@@ -35,6 +35,12 @@ BUILDING_COLORS = [
     (150, 150, 170)   # Lavender-gray
 ]
 
+# Traffic light states
+NS_LIGHT = "green"  # North-South light (green, yellow, red)
+EW_LIGHT = "red"    # East-West light (red, yellow, green)
+NS_YELLOW_COUNTDOWN = 0
+EW_YELLOW_COUNTDOWN = 0
+
 # Road dimensions
 ROAD_WIDTH = 100
 LANE_WIDTH = 40
@@ -343,8 +349,9 @@ def draw_road():
     for y in range(HEIGHT//2 - ROAD_WIDTH//2 + 10, HEIGHT//2 + ROAD_WIDTH//2 - 10, crosswalk_width + crosswalk_gap):
         pygame.draw.rect(screen, WHITE, (WIDTH//2 - ROAD_WIDTH//2 - 20, y, 20, crosswalk_width))
 
-def draw_traffic_light(state):
-    """Draw a more realistic traffic light"""
+def draw_traffic_lights():
+    """Draw two traffic lights - one for NS and one for EW"""
+    # North-South traffic light (right side of intersection)
     # Traffic light pole
     pygame.draw.rect(screen, BLACK, (WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 60, 10, 60))
     
@@ -354,15 +361,35 @@ def draw_traffic_light(state):
     
     # Red light
     red_light = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 95, 10, 10)
-    pygame.draw.ellipse(screen, (100, 0, 0) if state != "red" else RED, red_light)
+    pygame.draw.ellipse(screen, (100, 0, 0) if NS_LIGHT != "red" else RED, red_light)
     
     # Yellow light
     yellow_light = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 80, 10, 10)
-    pygame.draw.ellipse(screen, (100, 100, 0) if state != "yellow" else YELLOW, yellow_light)
+    pygame.draw.ellipse(screen, (100, 100, 0) if NS_LIGHT != "yellow" else YELLOW, yellow_light)
     
     # Green light
     green_light = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 65, 10, 10)
-    pygame.draw.ellipse(screen, (0, 100, 0) if state != "green" else GREEN, green_light)
+    pygame.draw.ellipse(screen, (0, 100, 0) if NS_LIGHT != "green" else GREEN, green_light)
+    
+    # East-West traffic light (bottom side of intersection)
+    # Traffic light pole
+    pygame.draw.rect(screen, BLACK, (WIDTH//2 - ROAD_WIDTH//2 - 60, HEIGHT//2 + ROAD_WIDTH//2 + 10, 60, 10))
+    
+    # Traffic light housing
+    light_box = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 100, HEIGHT//2 + ROAD_WIDTH//2 + 5, 50, 20)
+    pygame.draw.rect(screen, BLACK, light_box)
+    
+    # Red light
+    red_light = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 95, HEIGHT//2 + ROAD_WIDTH//2 + 10, 10, 10)
+    pygame.draw.ellipse(screen, (100, 0, 0) if EW_LIGHT != "red" else RED, red_light)
+    
+    # Yellow light
+    yellow_light = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 80, HEIGHT//2 + ROAD_WIDTH//2 + 10, 10, 10)
+    pygame.draw.ellipse(screen, (100, 100, 0) if EW_LIGHT != "yellow" else YELLOW, yellow_light)
+    
+    # Green light
+    green_light = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 65, HEIGHT//2 + ROAD_WIDTH//2 + 10, 10, 10)
+    pygame.draw.ellipse(screen, (0, 100, 0) if EW_LIGHT != "green" else GREEN, green_light)
 
 def get_vehicle_position(vehicle):
     """Get the position coordinates for a vehicle based on its position value and progress"""
@@ -436,11 +463,116 @@ def get_vehicle_direction(vehicle):
     else:
         return 'down'  # Default
 
+def check_collision(vehicle, next_position):
+    """Check if moving to next_position would cause a collision with another vehicle"""
+    # Get the actual coordinates for the next position
+    next_pos_coords = None
+    
+    if next_position == 'intersection':
+        # For intersection, use the entry point based on where the vehicle is coming from
+        if vehicle.position == 'north':
+            next_pos_coords = (WIDTH//2, HEIGHT//2 - 40)
+        elif vehicle.position == 'south':
+            next_pos_coords = (WIDTH//2, HEIGHT//2 + 40)
+        elif vehicle.position == 'east':
+            next_pos_coords = (WIDTH//2 + 40, HEIGHT//2)
+        elif vehicle.position == 'west':
+            next_pos_coords = (WIDTH//2 - 40, HEIGHT//2)
+        else:
+            next_pos_coords = (WIDTH//2, HEIGHT//2)
+    elif next_position in LANES:
+        next_pos_coords = LANES[next_position]['in']
+    else:
+        return False  # Unknown position, assume no collision
+    
+    # Get current vehicle's position coordinates
+    current_pos_coords = get_vehicle_position(vehicle)
+    
+    # Check distance to all other vehicles
+    min_distance = 25  # Minimum distance between vehicles
+    
+    for other in active_vehicles:
+        if other == vehicle:
+            continue  # Skip self
+            
+        # Skip vehicles not in the same lane or not ahead of us
+        if other.position != next_position and other.position != vehicle.position:
+            continue
+            
+        # Get other vehicle's position
+        other_pos = get_vehicle_position(other)
+        
+        # Calculate distance
+        distance = math.sqrt((next_pos_coords[0] - other_pos[0])**2 + (next_pos_coords[1] - other_pos[1])**2)
+        
+        # Check if too close
+        if distance < min_distance:
+            # Only count as collision if the other vehicle is ahead of us in our direction of travel
+            if vehicle.start_position == 'north' and other_pos[1] < current_pos_coords[1]:
+                return True
+            elif vehicle.start_position == 'south' and other_pos[1] > current_pos_coords[1]:
+                return True
+            elif vehicle.start_position == 'east' and other_pos[0] > current_pos_coords[0]:
+                return True
+            elif vehicle.start_position == 'west' and other_pos[0] < current_pos_coords[0]:
+                return True
+    
+    return False  # No collision
+
+def update_vehicle(vehicle, ns_light, ew_light):
+    """Update a single vehicle with the current light states"""
+    # Set the collision detection function
+    vehicle.check_collision_ahead = lambda: check_collision(vehicle, 
+                                                          vehicle.route[vehicle.route.index(vehicle.position) + 1] 
+                                                          if vehicle.route.index(vehicle.position) < len(vehicle.route) - 1 
+                                                          else None)
+    
+    # Determine which light applies to this vehicle
+    if vehicle.start_position in ['north', 'south']:
+        applicable_light = ns_light
+    else:  # east or west
+        applicable_light = ew_light
+        
+    # Update the vehicle with the applicable light
+    vehicle.update(applicable_light)
+
 def draw_vehicle(vehicle):
     """Draw a vehicle as a car-like shape instead of a circle"""
     pos = get_vehicle_position(vehicle)
     direction = get_vehicle_direction(vehicle)
+    
+    # Draw waiting indicator for vehicles stopped at red light or due to collision
+    if vehicle.state == "waiting" or vehicle.stopped_for_collision:
+        # Draw a red circle under the vehicle
+        indicator_color = (255, 0, 0, 128) if vehicle.state == "waiting" else (255, 165, 0, 128)  # Red for light, orange for collision
+        pygame.draw.circle(screen, indicator_color, pos, 15, width=2)
+        
+        # Draw a small satisfaction indicator
+        sat_color = (0, 255, 0) if vehicle.satisfaction > 7 else \
+                   (255, 255, 0) if vehicle.satisfaction > 3 else \
+                   (255, 0, 0)
+        pygame.draw.circle(screen, sat_color, (pos[0], pos[1] - 15), vehicle.satisfaction // 2 + 1)
+    
+    # Draw the vehicle
     draw_car(pos, vehicle.color, direction, vehicle)
+    
+    # Draw debug info if enabled
+    if DEBUG_MODE:
+        # Draw route indicator line
+        if vehicle.route.index(vehicle.position) < len(vehicle.route) - 1:
+            next_pos = vehicle.route[vehicle.route.index(vehicle.position) + 1]
+            if next_pos in LANES:
+                end_pos = LANES[next_pos]['in']
+                pygame.draw.line(screen, vehicle.color, pos, end_pos, 1)
+        
+        # Draw vehicle ID and state
+        font = pygame.font.SysFont('Arial', 10)
+        id_text = font.render(f"{id(vehicle) % 1000}", True, BLACK)
+        screen.blit(id_text, (pos[0] - 10, pos[1] - 20))
+        
+        # Draw collision detection area
+        if vehicle.stopped_for_collision:
+            pygame.draw.circle(screen, (255, 0, 0, 128), pos, 25, width=1)
 
 def draw_car(pos, color, direction, vehicle):
     """Draw a car-like shape at the given position with the given color and direction"""
@@ -614,8 +746,10 @@ def draw_stats():
 
 # Simulation loop
 running = True
-light_state = "green"  # Manual toggle for testing
-yellow_countdown = 0  # For yellow light transition
+NS_LIGHT = "green"  # North-South light starts green
+EW_LIGHT = "red"    # East-West light starts red
+NS_YELLOW_COUNTDOWN = 0
+EW_YELLOW_COUNTDOWN = 0
 current_tick = 0
 episode_length = 1000  # Length of an episode in ticks
 
@@ -632,11 +766,13 @@ while running:
             running = False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                if light_state == "green":
-                    light_state = "yellow"
-                    yellow_countdown = 30  # 1 second at 30 FPS
-                elif light_state == "red":
-                    light_state = "green"
+                # Toggle lights
+                if NS_LIGHT == "green" and EW_LIGHT == "red":
+                    NS_LIGHT = "yellow"
+                    NS_YELLOW_COUNTDOWN = 30  # 1 second at 30 FPS
+                elif NS_LIGHT == "red" and EW_LIGHT == "green":
+                    EW_LIGHT = "yellow"
+                    EW_YELLOW_COUNTDOWN = 30
             elif event.key == pygame.K_d:  # Toggle debug mode
                 DEBUG_MODE = not DEBUG_MODE
                 print(f"Debug mode: {'ON' if DEBUG_MODE else 'OFF'}")
@@ -644,18 +780,26 @@ while running:
                 SLOW_MODE = not SLOW_MODE
                 print(f"Slow mode: {'ON' if SLOW_MODE else 'OFF'}")
     
-    # Handle yellow light transition
-    if light_state == "yellow":
-        yellow_countdown -= 1
-        if yellow_countdown <= 0:
-            light_state = "red"
+    # Handle yellow light transitions
+    if NS_LIGHT == "yellow":
+        NS_YELLOW_COUNTDOWN -= 1
+        if NS_YELLOW_COUNTDOWN <= 0:
+            NS_LIGHT = "red"
+            EW_LIGHT = "green"  # Switch the other light to green
+    
+    if EW_LIGHT == "yellow":
+        EW_YELLOW_COUNTDOWN -= 1
+        if EW_YELLOW_COUNTDOWN <= 0:
+            EW_LIGHT = "red"
+            NS_LIGHT = "green"  # Switch the other light to green
     
     # Spawn new vehicles if needed
     spawn_vehicles(current_tick)
     
     # Update active vehicles and remove those that have reached their destination
     for vehicle in active_vehicles[:]:  # Use a copy for safe iteration
-        vehicle.update(light_state)
+        # Update with the appropriate light for this vehicle's direction
+        update_vehicle(vehicle, NS_LIGHT, EW_LIGHT)
         
         # Check if vehicle has arrived at destination
         if vehicle.state == "arrived" or vehicle.position == vehicle.destination:
@@ -680,6 +824,10 @@ while running:
         for lane, pos_data in LANES.items():
             pygame.draw.circle(screen, (255, 0, 0), pos_data['in'], 3)
             pygame.draw.circle(screen, (0, 0, 255), pos_data['out'], 3)
+            
+            # Draw queue positions
+            for pos in pos_data['queue']:
+                pygame.draw.circle(screen, (0, 100, 0), pos, 2)
         
         # Draw dots at intersection
         pygame.draw.circle(screen, (255, 255, 0), (WIDTH//2, HEIGHT//2), 5)
@@ -689,7 +837,7 @@ while running:
             for pos in positions:
                 pygame.draw.circle(screen, (0, 255, 0), pos, 3)
     
-    draw_traffic_light(light_state)
+    draw_traffic_lights()
     
     # Draw all vehicles
     for vehicle in active_vehicles:
@@ -697,22 +845,39 @@ while running:
     
     # Draw stats and record data
     waiting_count, moving_count, arrived_count, avg_satisfaction = draw_stats()
-    data_recorder.record_tick(current_tick, light_state, waiting_count, moving_count, arrived_count, avg_satisfaction)
+    data_recorder.record_tick(current_tick, f"NS:{NS_LIGHT},EW:{EW_LIGHT}", waiting_count, moving_count, arrived_count, avg_satisfaction)
     
     # Draw debug info
     if DEBUG_MODE:
         font = pygame.font.SysFont('Arial', 14)
         debug_text = [
-            f"Light: {light_state}",
+            f"NS Light: {NS_LIGHT}",
+            f"EW Light: {EW_LIGHT}",
             f"Active vehicles: {len(active_vehicles)}",
             f"Vehicles to spawn: {len(spawn_schedule)}",
+            f"Tick: {current_tick}/{episode_length}",
             f"Press D to toggle debug mode",
             f"Press S to toggle slow mode"
         ]
         
+        # Draw a background for debug text
+        pygame.draw.rect(screen, (240, 240, 240, 200), (WIDTH - 210, 5, 205, 120), border_radius=5)
+        pygame.draw.rect(screen, BLACK, (WIDTH - 210, 5, 205, 120), width=1, border_radius=5)
+        
         for i, text in enumerate(debug_text):
             text_surface = font.render(text, True, BLACK)
             screen.blit(text_surface, (WIDTH - 200, 10 + i * 20))
+        
+        # Draw lane occupancy
+        lane_counts = {}
+        for vehicle in active_vehicles:
+            if vehicle.position in LANES:
+                lane_counts[vehicle.position] = lane_counts.get(vehicle.position, 0) + 1
+        
+        lane_text = [f"{lane}: {count}/4" for lane, count in lane_counts.items()]
+        for i, text in enumerate(lane_text):
+            text_surface = font.render(text, True, BLACK)
+            screen.blit(text_surface, (WIDTH - 100, 130 + i * 20))
     
     pygame.display.flip()
     
@@ -736,6 +901,7 @@ while running:
         active_vehicles = []
         removed_vehicles = []
         spawn_schedule = generate_vehicle_spawn_schedule(20, episode_length)
-        light_state = "green"
+        NS_LIGHT = "green"
+        EW_LIGHT = "red"
 
 pygame.quit() 
