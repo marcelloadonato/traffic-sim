@@ -1,0 +1,10 @@
+episode,vehicle_id,vehicle_type,start_position,destination,commute_time,final_satisfaction
+2,2181434364624,truck,west,north,80,10
+2,2181485223568,car,west,east,60,10
+2,2181554019920,van,west,south,70,10
+2,2181554021712,car,east,south,60,10
+2,2181554021008,van,east,north,70,10
+2,2181554020240,van,west,north,70,10
+2,2181554023184,van,east,south,70,10
+2,2181554026640,car,west,north,60,10
+2,2181554028496,car,east,west,60,10
