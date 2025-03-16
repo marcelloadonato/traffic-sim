@@ -78,16 +78,38 @@ class DataRecorder:
             pd.DataFrame(self.episode_summaries).to_csv('data/episode_summaries.csv', index=False)
             
     def plot_learning_curve(self):
-        """Generate a plot showing reward over episodes"""
+        """Generate separate plots for reward, commute time, and satisfaction"""
         if not self.episode_summaries:
             return
             
         df = pd.DataFrame(self.episode_summaries)
+        
+        # Plot 1: Reward per episode
         plt.figure(figsize=(10, 6))
         plt.plot(df['episode'], df['reward'], 'b-')
         plt.title('Reward per Episode')
         plt.xlabel('Episode')
         plt.ylabel('Reward')
         plt.grid(True)
-        plt.savefig('data/learning_curve.png')
+        plt.savefig('data/reward_curve.png')
+        plt.close()
+        
+        # Plot 2: Average commute time
+        plt.figure(figsize=(10, 6))
+        plt.plot(df['episode'], df['avg_commute_time'], 'r-')
+        plt.title('Average Commute Time per Episode')
+        plt.xlabel('Episode')
+        plt.ylabel('Ticks')
+        plt.grid(True)
+        plt.savefig('data/commute_time_curve.png')
+        plt.close()
+        
+        # Plot 3: Average satisfaction
+        plt.figure(figsize=(10, 6))
+        plt.plot(df['episode'], df['avg_satisfaction'], 'g-')
+        plt.title('Average Satisfaction per Episode')
+        plt.xlabel('Episode')
+        plt.ylabel('Satisfaction (0-10)')
+        plt.grid(True)
+        plt.savefig('data/satisfaction_curve.png')
         plt.close() 
