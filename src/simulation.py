@@ -2,12 +2,13 @@ import random
 import pygame
 import numpy as np
 import torch
-from src.config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER, MAX_VEHICLES_PER_LANE
+from src.config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER, MAX_VEHICLES_PER_LANE, ROAD_WIDTH
 from src.visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_debug_info
 from src.vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
 from src.collision import check_collision, get_vehicle_position
 from src.shared import get_screen, get_clock
 from src.rl_agent import TrafficRLAgent
+from src.agent import Vehicle
 
 # Check if CUDA is available
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,6 +75,15 @@ class Simulation:
         self.last_arrived_count = 0
         self.last_flow_update = 0
         self.total_lanes = 4  # 2 lanes in each direction
+        
+        self.vehicles = []
+        self.current_tick = 0
+        self.ns_light = "red"
+        self.ew_light = "green"
+        self.light_timer = 0
+        self.light_duration = 100
+        self.spawn_probability = 0.1
+        self.max_vehicles = MAX_VEHICLES_PER_LANE * 4
     
     def _generate_buildings(self):
         """Helper method to generate buildings in all four quadrants"""
@@ -101,10 +111,10 @@ class Simulation:
         self.active_vehicles = []
         self.removed_vehicles = []
         self.spawn_schedule = generate_vehicle_spawn_schedule()
-        self.ns_light = "green"  # North-South light starts green
-        self.ew_light = "red"    # East-West light starts red
-        self.ns_yellow_countdown = 0
-        self.ew_yellow_countdown = 0
+        self.ns_light = "red"
+        self.ew_light = "green"
+        self.light_timer = 0
+        self.light_duration = 100
         self.current_tick = 0
         self.running = True
         self.episode_ended = False
@@ -140,19 +150,19 @@ class Simulation:
         """Update traffic light states with yellow transitions"""
         # Update NS light
         if self.ns_light == "yellow":
-            self.ns_yellow_countdown -= 1
-            if self.ns_yellow_countdown <= 0:
+            self.light_timer -= 1
+            if self.light_timer <= 0:
                 self.ns_light = "red"
-                self.ns_yellow_countdown = 0
+                self.light_timer = 0
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.record_light_change()
         
         # Update EW light
         if self.ew_light == "yellow":
-            self.ew_yellow_countdown -= 1
-            if self.ew_yellow_countdown <= 0:
+            self.light_timer -= 1
+            if self.light_timer <= 0:
                 self.ew_light = "red"
-                self.ew_yellow_countdown = 0
+                self.light_timer = 0
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.record_light_change()
     
@@ -167,10 +177,10 @@ class Simulation:
                 # Start yellow transition for current green light
                 if self.ew_light == "green":
                     self.ew_light = "yellow"
-                    self.ew_yellow_countdown = 3  # 3 ticks of yellow
+                    self.light_timer = 3  # 3 ticks of yellow
                 # Set NS to green after yellow transition
                 self.ns_light = "green"
-                self.ns_yellow_countdown = 0
+                self.light_timer = 0
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.record_light_change()
         
@@ -179,10 +189,10 @@ class Simulation:
                 # Start yellow transition for current green light
                 if self.ns_light == "green":
                     self.ns_light = "yellow"
-                    self.ns_yellow_countdown = 3  # 3 ticks of yellow
+                    self.light_timer = 3  # 3 ticks of yellow
                 # Set EW to green after yellow transition
                 self.ew_light = "green"
-                self.ew_yellow_countdown = 0
+                self.light_timer = 0
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.record_light_change()
     
@@ -217,10 +227,10 @@ class Simulation:
                             # Start yellow transition for current green light
                             if self.ns_light == "green":
                                 self.ns_light = "yellow"
-                                self.ns_yellow_countdown = 3
+                                self.light_timer = 3
                             elif self.ew_light == "green":
                                 self.ew_light = "yellow"
-                                self.ew_yellow_countdown = 3
+                                self.light_timer = 3
                             # Set the other light to green
                             if self.ns_light == "yellow":
                                 self.ew_light = "green"
@@ -230,80 +240,121 @@ class Simulation:
                                 self.data_recorder.record_light_change()
     
     def update_vehicles(self):
-        """Update all active vehicles with GPU acceleration"""
-        # Prevent multiple vehicles in intersection
-        intersection_occupied = any(v.position == 'intersection' for v in self.active_vehicles)
+        """Update the state of all vehicles in the simulation"""
+        # Update light state
+        light_state = (self.ns_light, self.ew_light)
         
-        # Update vehicle positions tensor
-        for i, vehicle in enumerate(self.active_vehicles):
-            if i >= MAX_VEHICLES_PER_LANE * 4:
-                break
-            pos = get_vehicle_position(vehicle)
-            self.vehicle_positions[i] = torch.tensor(pos, device=DEVICE)
+        # List to store vehicles to remove
+        vehicles_to_remove = []
         
-        # Update vehicles in parallel where possible
-        for vehicle in self.active_vehicles[:]:
-            # Check if vehicle has been waiting too long (e.g., 300 ticks)
-            if vehicle.state == "waiting" and vehicle.waiting_time > 300:
-                # Remove vehicle and record it as failed
-                if hasattr(self, 'data_recorder'):
-                    self.data_recorder.record_vehicle_failure(vehicle)
-                self.removed_vehicles.append(vehicle)
-                self.active_vehicles.remove(vehicle)
-                continue
+        # Update each vehicle
+        for vehicle in self.active_vehicles:
+            # Get current position index in route
+            try:
+                current_idx = vehicle.route.index(vehicle.position)
                 
-            # Check if vehicle is about to enter occupied intersection
-            if vehicle.position in ['north', 'south', 'east', 'west'] and vehicle.state == "moving":
-                next_idx = vehicle.route.index(vehicle.position) + 1
-                if next_idx < len(vehicle.route) and vehicle.route[next_idx] == 'intersection' and intersection_occupied:
-                    vehicle.state = "waiting"
-                    continue
+                # Get current and next positions for interpolation
+                current_pos = vehicle.position
+                next_pos = None if current_idx >= len(vehicle.route) - 1 else vehicle.route[current_idx + 1]
+                
+                # Convert string positions to coordinates
+                current_coords = current_pos
+                if isinstance(current_pos, str):
+                    if current_pos == 'north':
+                        current_coords = (WIDTH//2, 0)
+                    elif current_pos == 'south':
+                        current_coords = (WIDTH//2, HEIGHT)
+                    elif current_pos == 'east':
+                        current_coords = (WIDTH, HEIGHT//2)
+                    elif current_pos == 'west':
+                        current_coords = (0, HEIGHT//2)
+                    elif current_pos == 'intersection':
+                        # Use the previous position to determine intersection entry point
+                        if current_idx > 0 and isinstance(vehicle.route[current_idx - 1], tuple):
+                            current_coords = vehicle.route[current_idx - 1]
+                        else:
+                            current_coords = (WIDTH//2, HEIGHT//2)
+                
+                next_coords = next_pos
+                if isinstance(next_pos, str):
+                    if next_pos == 'north':
+                        next_coords = (WIDTH//2, 0)
+                    elif next_pos == 'south':
+                        next_coords = (WIDTH//2, HEIGHT)
+                    elif next_pos == 'east':
+                        next_coords = (WIDTH, HEIGHT//2)
+                    elif next_pos == 'west':
+                        next_coords = (0, HEIGHT//2)
+                    elif next_pos == 'intersection':
+                        # Use the next waypoint after intersection to determine direction
+                        if current_idx + 2 < len(vehicle.route):
+                            next_coords = vehicle.route[current_idx + 2]
+                        else:
+                            next_coords = current_coords
+                
+                # Check if vehicle has reached the edge of the map
+                if isinstance(current_coords, tuple):
+                    x, y = current_coords
+                    # Only remove if we've reached the destination
+                    if vehicle.position == vehicle.destination:
+                        vehicles_to_remove.append(vehicle)
+                        continue
+                
+                # Check for collisions with other vehicles
+                should_stop = check_collision(vehicle, self.active_vehicles, light_state)
+                
+                # Update vehicle state if no collision
+                if not should_stop and isinstance(current_coords, tuple) and isinstance(next_coords, tuple):
+                    # Calculate interpolated position
+                    vehicle.position_time += 1
+                    progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
                     
-            # Set the collision detection function with GPU acceleration
-            vehicle.check_collision_ahead = lambda: check_collision(vehicle, 
-                                                                  vehicle.route[vehicle.route.index(vehicle.position) + 1] 
-                                                                  if vehicle.route.index(vehicle.position) < len(vehicle.route) - 1 
-                                                                  else None,
-                                                                  self.active_vehicles)
+                    # Linear interpolation between current and next position
+                    interpolated_x = current_coords[0] + (next_coords[0] - current_coords[0]) * progress
+                    interpolated_y = current_coords[1] + (next_coords[1] - current_coords[1]) * progress
+                    
+                    # Store interpolated position for drawing
+                    vehicle.interpolated_position = (interpolated_x, interpolated_y)
+                    vehicle.state = "moving"
+                    
+                    # Move to next position when threshold is reached
+                    if vehicle.position_time >= vehicle.position_threshold:
+                        vehicle.position = next_pos
+                        vehicle.position_time = 0
+                        vehicle.interpolated_position = None
+                elif should_stop:
+                    vehicle.state = "waiting"
+                    vehicle.interpolated_position = current_coords if isinstance(current_coords, tuple) else None
             
-            # Determine which light applies to this vehicle
-            if vehicle.start_position in ['north', 'south']:
-                applicable_light = self.ns_light
-            else:  # east or west
-                applicable_light = self.ew_light
-            
-            # Update light states tensor
-            self.light_states = torch.tensor([
-                1.0 if self.ns_light == "green" else 0.0,
-                1.0 if self.ew_light == "green" else 0.0
-            ], device=DEVICE)
-            
-            # Update the vehicle with the applicable light and current FPS
-            vehicle.update(applicable_light, self.current_fps)
-            
-            # Check if vehicle has arrived at destination
-            if vehicle.state == "arrived" or vehicle.position == vehicle.destination:
-                # Record completion data before removing
-                if hasattr(self, 'data_recorder'):
-                    self.data_recorder.record_vehicle_completion(vehicle)
-                
-                # Remove from active and add to removed
-                self.removed_vehicles.append(vehicle)
-                self.active_vehicles.remove(vehicle)
-                
-                if DEBUG_MODE:
-                    print(f"Vehicle completed journey: {vehicle.start_position} -> {vehicle.destination} in {vehicle.commute_time} ticks")
+            except (ValueError, IndexError) as e:
+                # If there's an error with the route, remove the vehicle
+                vehicles_to_remove.append(vehicle)
+                continue
         
-        # Update traffic counts based on mode
-        if self.traffic_mode == "Pattern":
-            # Implement pattern-based traffic generation
-            pass
-        elif self.traffic_mode == "Peak Hours":
-            # Implement peak hours traffic generation
-            pass
-        else:  # Random mode
-            # Use existing random generation
-            pass
+        # Remove vehicles that have reached the edge
+        for vehicle in vehicles_to_remove:
+            if vehicle in self.active_vehicles:
+                self.active_vehicles.remove(vehicle)
+        
+        # Spawn new vehicles only at edges
+        if len(self.active_vehicles) < MAX_VEHICLES_PER_LANE * 4 and random.random() < 0.1:
+            spawn_edge = random.choice(['north', 'south', 'east', 'west'])
+            possible_destinations = ['north', 'south', 'east', 'west']
+            possible_destinations.remove(spawn_edge)
+            destination = random.choice(possible_destinations)
+            route = self.create_route(spawn_edge, destination)
+            
+            if route:
+                vehicle = Vehicle(
+                    route=route,
+                    position=spawn_edge,
+                    vehicle_type=random.choice(["car", "van", "truck"]),
+                    position_threshold=40
+                )
+                vehicle.destination = destination  # Add the destination attribute
+                vehicle.interpolated_position = None
+                self.active_vehicles.append(vehicle)
+                print(f"Spawned vehicle from {spawn_edge} to {destination} at tick {self.current_tick}")
     
     def draw(self, data_recorder):
         """Draw the current simulation state"""
@@ -342,7 +393,7 @@ class Simulation:
             self.update_traffic_lights()
             
             # Spawn new vehicles if needed
-            spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
+            spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles, self)
             
             # Update vehicles
             self.update_vehicles()
@@ -438,7 +489,7 @@ class Simulation:
         self.update_traffic_lights()
         
         # Spawn new vehicles if needed
-        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
+        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles, self)
         
         # Update vehicles with GPU acceleration
         self.update_vehicles()
@@ -462,9 +513,9 @@ class Simulation:
         # Control simulation speed using the fps value
         clock = get_clock()
         if SLOW_MODE:
-            clock.tick(10)  # Slower for debugging
+            clock.tick(5)  # Even slower for debugging
         else:
-            clock.tick(self.current_fps)
+            clock.tick(20)  # Reduced default speed
     
     def set_traffic_mode(self, mode):
         """Set the traffic generation mode"""
@@ -579,4 +630,85 @@ class Simulation:
             'avg_speed': self.get_avg_speed(),
             'stops_per_vehicle': self.get_stops_per_vehicle(),
             'fuel_efficiency': self.get_fuel_efficiency()
-        } 
+        }
+    
+    def create_route(self, start, end):
+        """Create a route from start edge to end edge"""
+        route = []
+        
+        # Starting position
+        if start == 'north':
+            route.extend([start, (WIDTH//2, 50), (WIDTH//2, 100)])
+        elif start == 'south':
+            route.extend([start, (WIDTH//2, HEIGHT-50), (WIDTH//2, HEIGHT-100)])
+        elif start == 'east':
+            route.extend([start, (WIDTH-50, HEIGHT//2), (WIDTH-100, HEIGHT//2)])
+        elif start == 'west':
+            route.extend([start, (50, HEIGHT//2), (100, HEIGHT//2)])
+        
+        # Add intersection approach
+        if start == 'north':
+            route.extend([(WIDTH//2, HEIGHT//2 - 100), (WIDTH//2, HEIGHT//2 - 50)])
+        elif start == 'south':
+            route.extend([(WIDTH//2, HEIGHT//2 + 100), (WIDTH//2, HEIGHT//2 + 50)])
+        elif start == 'east':
+            route.extend([(WIDTH//2 + 100, HEIGHT//2), (WIDTH//2 + 50, HEIGHT//2)])
+        elif start == 'west':
+            route.extend([(WIDTH//2 - 100, HEIGHT//2), (WIDTH//2 - 50, HEIGHT//2)])
+        
+        # Add intersection waypoint
+        route.append('intersection')
+        
+        # Add intersection exit based on turn type
+        if (start == 'north' and end == 'west') or (start == 'east' and end == 'south'):
+            route.extend([
+                (WIDTH//2 - 25, HEIGHT//2 - 25),
+                (WIDTH//2 - 50, HEIGHT//2)
+            ])
+        elif (start == 'north' and end == 'east') or (start == 'west' and end == 'south'):
+            route.extend([
+                (WIDTH//2 + 25, HEIGHT//2 - 25),
+                (WIDTH//2 + 50, HEIGHT//2)
+            ])
+        elif (start == 'south' and end == 'west') or (start == 'east' and end == 'north'):
+            route.extend([
+                (WIDTH//2 - 25, HEIGHT//2 + 25),
+                (WIDTH//2 - 50, HEIGHT//2)
+            ])
+        elif (start == 'south' and end == 'east') or (start == 'west' and end == 'north'):
+            route.extend([
+                (WIDTH//2 + 25, HEIGHT//2 + 25),
+                (WIDTH//2 + 50, HEIGHT//2)
+            ])
+        elif start == 'north' and end == 'south':
+            route.extend([
+                (WIDTH//2, HEIGHT//2),
+                (WIDTH//2, HEIGHT//2 + 50)
+            ])
+        elif start == 'south' and end == 'north':
+            route.extend([
+                (WIDTH//2, HEIGHT//2),
+                (WIDTH//2, HEIGHT//2 - 50)
+            ])
+        elif start == 'east' and end == 'west':
+            route.extend([
+                (WIDTH//2, HEIGHT//2),
+                (WIDTH//2 - 50, HEIGHT//2)
+            ])
+        elif start == 'west' and end == 'east':
+            route.extend([
+                (WIDTH//2, HEIGHT//2),
+                (WIDTH//2 + 50, HEIGHT//2)
+            ])
+        
+        # Add exit path
+        if end == 'north':
+            route.extend([(WIDTH//2, 100), (WIDTH//2, 50), end])
+        elif end == 'south':
+            route.extend([(WIDTH//2, HEIGHT-100), (WIDTH//2, HEIGHT-50), end])
+        elif end == 'east':
+            route.extend([(WIDTH-100, HEIGHT//2), (WIDTH-50, HEIGHT//2), end])
+        elif end == 'west':
+            route.extend([(100, HEIGHT//2), (50, HEIGHT//2), end])
+        
+        return route 

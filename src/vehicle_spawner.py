@@ -38,8 +38,11 @@ def generate_vehicle_spawn_schedule(total_vehicles=TOTAL_VEHICLES, max_ticks=EPI
     schedule.sort(key=lambda x: x['spawn_tick'])
     return schedule
 
-def spawn_vehicles(current_tick, spawn_schedule, active_vehicles):
+def spawn_vehicles(current_tick, spawn_schedule, active_vehicles, simulation=None):
     """Check if any vehicles should spawn this tick"""
+    if simulation is None:
+        return  # Cannot spawn vehicles without simulation reference
+        
     # Check spawn schedule
     vehicles_to_spawn = [v for v in spawn_schedule if v['spawn_tick'] == current_tick]
     
@@ -53,17 +56,26 @@ def spawn_vehicles(current_tick, spawn_schedule, active_vehicles):
         lane = vehicle_info['start']
         # Only spawn if there are fewer than 4 vehicles in this lane
         if lane_counts.get(lane, 0) < MAX_VEHICLES_PER_LANE:
-            # Create the vehicle
-            vehicle = Vehicle(vehicle_info['start'], vehicle_info['destination'])
-            vehicle.color = random.choice(VEHICLE_COLORS)
-            vehicle.start_position = vehicle_info['start']  # Store original starting point
+            # Create route using simulation's create_route function
+            route = simulation.create_route(vehicle_info['start'], vehicle_info['destination'])
             
-            # Add to active vehicles
-            active_vehicles.append(vehicle)
-            spawn_schedule.remove(vehicle_info)
-            lane_counts[lane] = lane_counts.get(lane, 0) + 1
-            
-            # Debug print
-            print(f"Spawned vehicle from {vehicle_info['start']} to {vehicle_info['destination']} at tick {current_tick}")
-            print(f"Route: {vehicle.route}")
+            if route:
+                # Create the vehicle with proper route
+                vehicle = Vehicle(
+                    route=route,
+                    position=vehicle_info['start'],
+                    vehicle_type=random.choice(["car", "van", "truck"]),
+                    position_threshold=40
+                )
+                vehicle.destination = vehicle_info['destination']
+                vehicle.color = random.choice(VEHICLE_COLORS)
+                vehicle.interpolated_position = None
+                
+                # Add to active vehicles
+                active_vehicles.append(vehicle)
+                spawn_schedule.remove(vehicle_info)
+                lane_counts[lane] = lane_counts.get(lane, 0) + 1
+                
+                # Debug print
+                print(f"Spawned vehicle from {vehicle_info['start']} to {vehicle_info['destination']} at tick {current_tick}")
         # If lane is full, leave in schedule for later 

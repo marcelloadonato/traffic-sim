@@ -222,75 +222,126 @@ def draw_traffic_lights(ns_light, ew_light):
     draw_light(pole_x + 49, center_y, GREEN, ew_light == "green")
 
 def draw_vehicle(vehicle, debug_mode=False):
-    """Draw a vehicle as a car-like shape instead of a circle"""
+    """Draw a vehicle on the screen"""
     screen = get_screen()
-    pos = get_vehicle_position(vehicle)
-    direction = get_vehicle_direction(vehicle)
     
-    # Create satisfaction color gradient from red (0) to green (10)
-    sat_level = max(0, min(10, vehicle.satisfaction))  # Ensure satisfaction is between 0-10
-    # Calculate color: red component decreases as satisfaction increases, green increases
-    red = int(255 * (10 - sat_level) / 10)
-    green = int(255 * sat_level / 10)
-    satisfaction_color = (red, green, 0)  # R,G,B format
-    
-    # Calculate the position with animation offset for both vehicle and ID
-    animated_pos = list(pos)
-    if direction == 'up':
-        animated_pos[1] -= vehicle.animation_offset
-    elif direction == 'down':
-        animated_pos[1] += vehicle.animation_offset
-    elif direction == 'left':
-        animated_pos[0] -= vehicle.animation_offset
-    elif direction == 'right':
-        animated_pos[0] += vehicle.animation_offset
-    animated_pos = tuple(animated_pos)
-    
-    # Draw waiting indicator for vehicles stopped at red light or due to collision
-    if vehicle.state == "waiting" or vehicle.stopped_for_collision:
-        # Draw a circle under the vehicle - use surface for transparency
-        if vehicle.state == "waiting":
-            indicator_color = (255, 0, 0)  # Red for light
+    # Get vehicle position
+    if hasattr(vehicle, 'interpolated_position') and vehicle.interpolated_position is not None:
+        x, y = vehicle.interpolated_position
+    else:
+        # Fall back to edge positions if no interpolation
+        if vehicle.position == 'north':
+            x, y = WIDTH//2, 0
+        elif vehicle.position == 'south':
+            x, y = WIDTH//2, HEIGHT
+        elif vehicle.position == 'east':
+            x, y = WIDTH, HEIGHT//2
+        elif vehicle.position == 'west':
+            x, y = 0, HEIGHT//2
+        elif vehicle.position == 'intersection':
+            # Use the previous position if at intersection
+            current_idx = vehicle.route.index(vehicle.position)
+            if current_idx > 0 and isinstance(vehicle.route[current_idx - 1], tuple):
+                x, y = vehicle.route[current_idx - 1]
+            else:
+                return  # Skip drawing if position cannot be determined
+        elif isinstance(vehicle.position, tuple):
+            x, y = vehicle.position
         else:
-            indicator_color = (255, 165, 0)  # Orange for collision
+            return  # Skip drawing if position cannot be determined
+    
+    # Calculate vehicle size based on type
+    base_size = 20
+    if vehicle.vehicle_type == "truck":
+        size = int(base_size * 1.5)
+    elif vehicle.vehicle_type == "van":
+        size = int(base_size * 1.2)
+    else:  # car
+        size = base_size
+    
+    # Calculate color based on satisfaction (red when low, green when high)
+    satisfaction_normalized = max(0, min(1, vehicle.satisfaction / 10.0))
+    color = (
+        int(255 * (1 - satisfaction_normalized)),  # Red component
+        int(255 * satisfaction_normalized),        # Green component
+        0                                         # Blue component
+    )
+    
+    # Draw vehicle shadow (offset slightly for 3D effect)
+    shadow_offset = 2
+    pygame.draw.rect(screen, (50, 50, 50), 
+                    (x - size//2 + shadow_offset, 
+                     y - size//2 + shadow_offset, 
+                     size, size))
+    
+    # Draw vehicle body
+    pygame.draw.rect(screen, color, 
+                    (x - size//2, y - size//2, size, size))
+    
+    # Draw direction arrow
+    arrow_size = size * 0.8
+    arrow_color = (255, 255, 255)  # White arrow
+    arrow_shadow_color = (0, 0, 0)  # Black shadow
+    
+    # Get next position to determine direction
+    current_idx = vehicle.route.index(vehicle.position)
+    next_pos = None if current_idx >= len(vehicle.route) - 1 else vehicle.route[current_idx + 1]
+    
+    # Calculate arrow points based on movement direction
+    if isinstance(next_pos, tuple) and isinstance(vehicle.position, tuple):
+        dx = next_pos[0] - vehicle.position[0]
+        dy = next_pos[1] - vehicle.position[1]
+    elif next_pos == 'intersection':
+        # Use the position after intersection
+        if current_idx + 2 < len(vehicle.route):
+            after_intersection = vehicle.route[current_idx + 2]
+            if isinstance(after_intersection, tuple):
+                dx = after_intersection[0] - x
+                dy = after_intersection[1] - y
+            else:
+                dx = dy = 0
+        else:
+            dx = dy = 0
+    else:
+        dx = dy = 0
+    
+    if dx != 0 or dy != 0:
+        # Normalize direction vector
+        length = (dx * dx + dy * dy) ** 0.5
+        if length > 0:
+            dx /= length
+            dy /= length
             
-        # Create a transparent surface for the indicator
-        indicator_surface = pygame.Surface((30, 30), pygame.SRCALPHA)
-        pygame.draw.circle(indicator_surface, (*indicator_color, 128), (15, 15), 15, width=2)
-        screen.blit(indicator_surface, (animated_pos[0] - 15, animated_pos[1] - 15))
+            # Calculate arrow points
+            arrow_points = [
+                (x + dx * arrow_size//2, y + dy * arrow_size//2),  # Tip
+                (x - dx * arrow_size//2 - dy * arrow_size//4, y - dy * arrow_size//2 + dx * arrow_size//4),  # Left base
+                (x - dx * arrow_size//2 + dy * arrow_size//4, y - dy * arrow_size//2 - dx * arrow_size//4)   # Right base
+            ]
+            
+            # Draw arrow shadow
+            shadow_points = [(x + shadow_offset, y + shadow_offset) for x, y in arrow_points]
+            pygame.draw.polygon(screen, arrow_shadow_color, shadow_points)
+            
+            # Draw arrow
+            pygame.draw.polygon(screen, arrow_color, arrow_points)
     
-    # Draw the vehicle using the animated position
-    draw_car(animated_pos, satisfaction_color, direction, vehicle)
-    
-    # Always draw vehicle ID (not just in debug mode) - using animated position
-    font = pygame.font.SysFont('Arial', FONT_SIZE['vehicle_id'])
-    id_text = font.render(f"{id(vehicle) % 1000}", True, WHITE)
-    
-    # Create a background for the ID text
-    id_bg_rect = id_text.get_rect(center=animated_pos)
-    id_bg_rect.inflate_ip(4, 2)  # Slightly larger than the text
-    id_bg = pygame.Surface((id_bg_rect.width, id_bg_rect.height))
-    id_bg.fill((0, 0, 0))
-    id_bg.set_alpha(180)
-    screen.blit(id_bg, id_bg_rect)
-    screen.blit(id_text, id_text.get_rect(center=animated_pos))
+    # Draw vehicle ID
+    font = pygame.font.Font(None, 20)
+    id_text = font.render(str(id(vehicle) % 1000), True, (255, 255, 255))
+    screen.blit(id_text, (x - 10, y - 10))
     
     # Draw debug info if enabled
     if debug_mode:
-        # Draw route indicator line
-        if vehicle.route.index(vehicle.position) < len(vehicle.route) - 1:
-            next_pos = vehicle.route[vehicle.route.index(vehicle.position) + 1]
-            if next_pos in LANES:
-                end_pos = LANES[next_pos]['in']
-                pygame.draw.line(screen, DEBUG_COLORS['route_preview'], animated_pos, end_pos, 2)
-        
-        # Draw vehicle state (only in debug mode)
-        state_text = font.render(f"{vehicle.state}", True, BLACK)
-        screen.blit(state_text, (animated_pos[0] - 15, animated_pos[1] - 15))
-        
-        # Draw collision detection area
-        if vehicle.stopped_for_collision:
-            pygame.draw.circle(screen, DEBUG_COLORS['collision_area'], animated_pos, 25, width=1)
+        debug_font = pygame.font.Font(None, 16)
+        debug_info = [
+            f"Pos: {vehicle.position}",
+            f"State: {vehicle.state}",
+            f"Sat: {vehicle.satisfaction:.1f}"
+        ]
+        for i, info in enumerate(debug_info):
+            text = debug_font.render(info, True, (255, 255, 255))
+            screen.blit(text, (x + size//2 + 5, y - size//2 + i * 15))
 
 def draw_car(pos, color, direction, vehicle):
     """Draw a car-like shape at the given position with the given color and direction"""

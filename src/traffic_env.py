@@ -76,43 +76,58 @@ class TrafficEnv(gym.Env):
             self.simulation.update_simulation()
             
             # Calculate base metrics
-            avg_commute = self.simulation.get_avg_commute_time()
-            avg_satisfaction = self.simulation.get_avg_satisfaction()
-            waiting_count = sum(1 for v in self.simulation.active_vehicles if v.state == "waiting")
-            moving_count = sum(1 for v in self.simulation.active_vehicles if v.state == "moving")
-            
-            # Calculate reward components
-            # 1. Commute time penalty (normalized)
-            commute_penalty = -0.1 * min(avg_commute / 100, 1.0)  # Cap at 100 ticks
-            
-            # 2. Satisfaction bonus (normalized)
-            satisfaction_bonus = 0.5 * (avg_satisfaction / 10.0)  # Normalize to 0-1
-            
-            # 3. Flow bonus (reward for moving vehicles)
-            flow_bonus = 0.3 * (moving_count / max(1, waiting_count + moving_count))
-            
-            # 4. Queue penalty (penalize long queues)
-            queue_penalty = -0.2 * min(waiting_count / 20, 1.0)  # Cap at 20 waiting vehicles
-            
-            # Combine rewards
-            reward = commute_penalty + satisfaction_bonus + flow_bonus + queue_penalty
-            
-            # Additional penalty if vehicles are stuck at episode end
-            if self.simulation.episode_ended and self.simulation.active_vehicles:
-                stuck_penalty = -5 * len(self.simulation.active_vehicles)  # Reduced penalty
-                reward += stuck_penalty
-            
-            observation = self._get_observation()
-            terminated = self.simulation.episode_ended
-            truncated = self.current_step >= self.max_steps
-            
-            info = {
-                'avg_satisfaction': avg_satisfaction,
-                'avg_commute_time': avg_commute,
-                'stuck_vehicles': len(self.simulation.active_vehicles),
-                'waiting_count': waiting_count,
-                'moving_count': moving_count
-            }
+            try:
+                avg_commute = self.simulation.get_avg_commute_time()
+                avg_satisfaction = self.simulation.get_avg_satisfaction()
+                waiting_count = sum(1 for v in self.simulation.active_vehicles if v.state == "waiting")
+                moving_count = sum(1 for v in self.simulation.active_vehicles if v.state == "moving")
+                
+                # Calculate reward components
+                # 1. Commute time penalty (normalized)
+                commute_penalty = -0.15 * min(avg_commute / 100, 1.0)  # Slightly increased penalty
+                
+                # 2. Satisfaction bonus (normalized)
+                satisfaction_bonus = 0.4 * (avg_satisfaction / 10.0)  # Slightly reduced base bonus
+                
+                # 3. Flow bonus (reward for moving vehicles)
+                flow_bonus = 0.25 * (moving_count / max(1, waiting_count + moving_count))
+                
+                # 4. Queue penalty (penalize long queues)
+                queue_penalty = -0.15 * min(waiting_count / 20, 1.0)  # Reduced penalty
+                
+                # 5. Satisfaction threshold bonus (reward for maintaining high satisfaction)
+                satisfaction_threshold_bonus = 0.05 if avg_satisfaction >= 7.0 else 0.0
+                
+                # Combine rewards
+                reward = commute_penalty + satisfaction_bonus + flow_bonus + queue_penalty + satisfaction_threshold_bonus
+                
+                # Additional penalty if vehicles are stuck at episode end
+                if self.simulation.episode_ended and self.simulation.active_vehicles:
+                    stuck_penalty = -3 * len(self.simulation.active_vehicles)  # Further reduced penalty
+                    reward += stuck_penalty
+                
+                observation = self._get_observation()
+                terminated = self.simulation.episode_ended
+                truncated = self.current_step >= self.max_steps
+                
+                info = {
+                    'avg_satisfaction': avg_satisfaction,
+                    'avg_commute_time': avg_commute,
+                    'stuck_vehicles': len(self.simulation.active_vehicles),
+                    'waiting_count': waiting_count,
+                    'moving_count': moving_count
+                }
+            except Exception as e:
+                print(f"Error calculating reward: {str(e)}")
+                # Provide default values if calculation fails
+                reward = 0
+                info = {
+                    'avg_satisfaction': 0,
+                    'avg_commute_time': 0,
+                    'stuck_vehicles': 0,
+                    'waiting_count': 0,
+                    'moving_count': 0
+                }
             
             return observation, reward, terminated, truncated, info
     

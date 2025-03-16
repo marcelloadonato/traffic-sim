@@ -2,43 +2,67 @@ import random
 from src.config import LANES, INTERMEDIATE_POSITIONS, WIDTH, HEIGHT
 
 class Vehicle:
-    def __init__(self, start, destination):
-        self.start_position = start
-        self.destination = destination
-        self.position = start
-        self.route = self._determine_route()
-        self.state = "moving"
-        self.commute_time = 0
-        self.satisfaction = 10
+    def __init__(self, route, position, vehicle_type="car", position_threshold=20):
+        self.route = route
+        self.position = position  # Starting position (edge of map)
+        self.vehicle_type = vehicle_type
         self.position_time = 0
-        self.position_threshold = 30  # Time to move between positions
-        self.animation_offset = 0  # For smooth movement animation
+        self.position_threshold = position_threshold
+        self.state = "moving"
         self.stopped_for_collision = False
-        self.vehicle_type = random.choice(["car", "truck", "van"])
-        self.size_multiplier = 1.0 if self.vehicle_type == "car" else 1.5 if self.vehicle_type == "truck" else 1.2
-        self.color = None  # Will be set by spawner
-        self.queue_position = 0  # Track position in queue
-        self.log_counter = 0  # For reducing log spam
-        self.waiting_time = 0  # Track continuous waiting time
-        self.base_speed = 30  # Base speed in pixels per step
+        self.satisfaction = 10.0  # Initial satisfaction
+        self.commute_time = 0
+        self.destination = None  # Will be set when vehicle is created
+        self.waiting_time = 0  # Add waiting_time attribute
+        self.queue_position = 0  # Add queue_position attribute
+        self.last_state = None  # Add last_state attribute
+        self.log_counter = 0  # Add log_counter attribute
         
-        # New metrics tracking
-        self.stop_count = 0  # Number of times the vehicle has stopped
-        self.acceleration_changes = 0  # Number of acceleration/deceleration changes
-        self.total_ticks = 0  # Total number of ticks the vehicle has been active
-        self.speed = self.base_speed  # Current speed
-        self.last_speed = self.base_speed  # Previous speed for tracking changes
-        self.wait_time = 0  # Current wait time at intersection
-        self.total_wait_time = 0  # Total wait time throughout journey
+        # Animation and display properties
+        self.interpolated_position = None  # For smooth movement between positions
+        self.color = None
+        self.size_multiplier = 1.0 if vehicle_type == "car" else 1.5 if vehicle_type == "truck" else 1.2
         
-        # Adjust timing based on vehicle type
-        if self.vehicle_type == "truck":
-            self.position_threshold = 80  # Trucks move slower
-            self.base_speed = 20  # Slower base speed for trucks
-        elif self.vehicle_type == "van":
-            self.position_threshold = 70  # Vans move a bit slower
-            self.base_speed = 25  # Slightly slower base speed for vans
+        # Performance metrics
+        self.speed = 15  # Reduced base speed
+        self.base_speed = 15  # Reduced base speed
+        self.last_speed = 15  # Reduced base speed
+        self.wait_time = 0
+        self.total_wait_time = 0
+        self.stop_count = 0
+        self.acceleration_changes = 0
+        self.total_ticks = 0
         
+        # Set size and speed based on vehicle type
+        if vehicle_type == "truck":
+            self.size = 30
+            self.base_speed = 10  # Slower for trucks
+            self.speed = 10
+        elif vehicle_type == "van":
+            self.size = 25
+            self.base_speed = 12  # Medium speed for vans
+            self.speed = 12
+        else:  # car
+            self.size = 20
+            self.base_speed = 15  # Faster for cars but still reasonable
+            self.speed = 15
+            
+    def is_at_edge(self):
+        """Check if vehicle is at an edge position"""
+        return self.position in ['north', 'south', 'east', 'west']
+        
+    def get_edge_coords(self):
+        """Get the coordinates for edge positions"""
+        if self.position == 'north':
+            return (WIDTH//2, 0)
+        elif self.position == 'south':
+            return (WIDTH//2, HEIGHT)
+        elif self.position == 'east':
+            return (WIDTH, HEIGHT//2)
+        elif self.position == 'west':
+            return (0, HEIGHT//2)
+        return None
+    
     def _determine_route(self):
         """Create a complete route from start to destination with proper waypoints."""
         route = [self.start_position]
@@ -170,12 +194,15 @@ class Vehicle:
             if self.at_intersection() and self._should_stop_at_red(light_state):
                 self.wait_time += 1
                 self.total_wait_time += 1
+                self.speed = 0  # Ensure we stop completely
             else:
                 self.wait_time = 0
+                self.speed = self.base_speed
         
         # Track stops
         if self.state == "waiting" and self.last_state != "waiting":
             self.stop_count += 1
+            self.speed = 0  # Ensure we stop completely
         
         self.last_state = self.state
         
@@ -198,18 +225,21 @@ class Vehicle:
         # Get next position
         next_pos = self.route[current_idx + 1]
         
-        # Check if we need to stop
+        # Check if we need to stop for traffic light
         should_stop = False
         
         # Stop at red or yellow light if approaching intersection
-        if self.position in ['north', 'south', 'east', 'west']:
-            if light_state in ["red", "yellow"]:
+        if self.position in ['north', 'south', 'east', 'west'] and next_pos == 'intersection':
+            ns_light, ew_light = light_state
+            if ((self.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
+                (self.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
                 should_stop = True
                 if self.state != "waiting" and self.log_counter == 0:
-                    print(f"Vehicle stopped at {light_state} light: {self.position}")
+                    print(f"Vehicle stopped at {ns_light if self.position in ['north', 'south'] else ew_light} light: {self.position}")
                 self.state = "waiting"
                 self.waiting_time += 1
                 self.animation_offset = 0
+                self.speed = 0  # Ensure we stop completely
         
         # Stop if there's a collision ahead
         if self.check_collision_ahead():
@@ -220,23 +250,31 @@ class Vehicle:
             self.state = "waiting"
             self.waiting_time += 1
             self.animation_offset = 0  # Reset animation when stopping
+            self.speed = 0  # Ensure we stop completely
         
         # Update position if we're not stopping
         if not should_stop:
             self.state = "moving"
             self.stopped_for_collision = False
             self.waiting_time = 0
+            self.speed = self.base_speed  # Restore normal speed
             
+            # Adjust movement speed based on position
             base_threshold = self.position_threshold
-            if self.position == 'intersection' or isinstance(self.position, tuple):
-                base_threshold = self.position_threshold // 2  # Faster through intersection
+            if self.position == 'intersection':
+                # Slower movement through intersection
+                base_threshold = self.position_threshold * 1.5
+                self.speed = self.base_speed * 0.8  # Slower in intersection
+            elif isinstance(self.position, tuple):
+                # Faster movement between waypoints
+                base_threshold = self.position_threshold // 2
             
             self.position_time += 1
             progress = min(self.position_time / base_threshold, 1.0)
             fps_scale = current_fps / 30.0
             
-            movement_speed = self.base_speed * 1.5 if self.position == 'intersection' else self.base_speed
-            self.animation_offset = int(progress * movement_speed * fps_scale)
+            # Calculate movement based on current speed
+            self.animation_offset = int(progress * self.speed * fps_scale)
             
             if self.position_time >= base_threshold:
                 self.position = next_pos
@@ -247,10 +285,16 @@ class Vehicle:
         
         # Decrease satisfaction while waiting
         if self.state == "waiting":
-            if self.waiting_time % 5 == 0:  # Decrease satisfaction every 5 ticks
-                self.satisfaction = max(0, self.satisfaction - 0.2)  # Decrease by 0.2 every 5 ticks
+            if self.waiting_time % 10 == 0:  # Decrease satisfaction every 10 ticks instead of 5
+                self.satisfaction = max(0, self.satisfaction - 0.1)  # Decrease by 0.1 instead of 0.2
                 if self.log_counter == 0:
                     print(f"Vehicle satisfaction decreased to: {self.satisfaction:.1f}")
+        else:
+            # Gradually recover satisfaction while moving
+            if self.waiting_time % 15 == 0:  # Recover satisfaction every 15 ticks
+                self.satisfaction = min(10, self.satisfaction + 0.05)  # Recover by 0.05
+                if self.log_counter == 0:
+                    print(f"Vehicle satisfaction increased to: {self.satisfaction:.1f}")
         
         return False
     
@@ -270,4 +314,23 @@ class Vehicle:
     
     def at_intersection(self):
         """Check if vehicle is at the intersection."""
-        return self.position == "intersection" 
+        return self.position == "intersection"
+    
+    def update_metrics(self):
+        """Update vehicle performance metrics"""
+        self.total_ticks += 1
+        
+        if self.state == "waiting":
+            self.wait_time += 1
+            self.total_wait_time += 1
+            if self.speed > 0:
+                self.stop_count += 1
+            self.speed = 0
+        else:
+            self.wait_time = 0
+            self.speed = self.base_speed
+            
+        # Track acceleration changes
+        if self.speed != self.last_speed:
+            self.acceleration_changes += 1
+        self.last_speed = self.speed 
