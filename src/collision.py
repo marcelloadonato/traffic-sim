@@ -1,7 +1,8 @@
+import pygame
 import math
 import torch
-from config import WIDTH, HEIGHT, ROAD_WIDTH, LANES
-from shared import DEVICE
+from src.config import WIDTH, HEIGHT, ROAD_WIDTH, LANES
+from src.shared import DEVICE
 
 def get_vehicle_position(vehicle):
     """Get the position coordinates for a vehicle based on its position value and progress"""

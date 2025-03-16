@@ -1,8 +1,8 @@
 import pygame
 import random
-from config import *
-from collision import get_vehicle_position, get_vehicle_direction
-from shared import get_screen
+from src.config import *
+from src.collision import get_vehicle_position, get_vehicle_direction
+from src.shared import get_screen
 
 def draw_buildings(buildings):
     """Draw buildings in the city"""

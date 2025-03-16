@@ -2,7 +2,7 @@
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from config import TOTAL_VEHICLES  # Fix import path
+from src.config import TOTAL_VEHICLES
 
 """
 Custom Environment for traffic light control using reinforcement learning.

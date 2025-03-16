@@ -2,12 +2,12 @@ import random
 import pygame
 import numpy as np
 import torch
-from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER, MAX_VEHICLES_PER_LANE
-from visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info, draw_speed_slider, draw_training_slider
-from vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
-from collision import check_collision, get_vehicle_position
-from shared import get_screen, get_clock
-from rl_agent import TrafficRLAgent
+from src.config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER, MAX_VEHICLES_PER_LANE
+from src.visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info, draw_speed_slider, draw_training_slider
+from src.vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
+from src.collision import check_collision, get_vehicle_position
+from src.shared import get_screen, get_clock
+from src.rl_agent import TrafficRLAgent
 
 # Check if CUDA is available
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,41 +42,8 @@ class Simulation:
         # Current simulation mode
         self.simulation_mode = "RL"  # Default mode
         
-        # Northwest quadrant
-        for _ in range(5):
-            x = random.randint(50, WIDTH//2 - 100//2 - 80)
-            y = random.randint(50, HEIGHT//2 - 100//2 - 80)
-            width = random.randint(40, 100)
-            height = random.randint(40, 100)
-            color = random.choice(BUILDING_COLORS)
-            self.buildings.append((x, y, width, height, color))
-
-        # Northeast quadrant
-        for _ in range(5):
-            x = random.randint(WIDTH//2 + 100//2 + 30, WIDTH - 100)
-            y = random.randint(50, HEIGHT//2 - 100//2 - 80)
-            width = random.randint(40, 100)
-            height = random.randint(40, 100)
-            color = random.choice(BUILDING_COLORS)
-            self.buildings.append((x, y, width, height, color))
-
-        # Southwest quadrant
-        for _ in range(5):
-            x = random.randint(50, WIDTH//2 - 100//2 - 80)
-            y = random.randint(HEIGHT//2 + 100//2 + 30, HEIGHT - 100)
-            width = random.randint(40, 100)
-            height = random.randint(40, 100)
-            color = random.choice(BUILDING_COLORS)
-            self.buildings.append((x, y, width, height, color))
-
-        # Southeast quadrant
-        for _ in range(5):
-            x = random.randint(WIDTH//2 + 100//2 + 30, WIDTH - 100)
-            y = random.randint(HEIGHT//2 + 100//2 + 30, HEIGHT - 100)
-            width = random.randint(40, 100)
-            height = random.randint(40, 100)
-            color = random.choice(BUILDING_COLORS)
-            self.buildings.append((x, y, width, height, color))
+        # Generate buildings in each quadrant
+        self._generate_buildings()
         
         # Initialize traffic counts
         self.traffic_counts = {
@@ -102,6 +69,27 @@ class Simulation:
         self.vehicle_positions = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 2), device=DEVICE)  # For all possible vehicles
         self.vehicle_states = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 4), device=DEVICE)  # [waiting, moving, arrived, satisfaction]
         self.light_states = torch.zeros(2, device=DEVICE)  # [ns_light, ew_light]
+    
+    def _generate_buildings(self):
+        """Helper method to generate buildings in all four quadrants"""
+        # Define quadrant boundaries
+        quadrants = [
+            # (x_min, x_max, y_min, y_max)
+            (50, WIDTH//2 - 100//2 - 80, 50, HEIGHT//2 - 100//2 - 80),  # Northwest
+            (WIDTH//2 + 100//2 + 30, WIDTH - 100, 50, HEIGHT//2 - 100//2 - 80),  # Northeast
+            (50, WIDTH//2 - 100//2 - 80, HEIGHT//2 + 100//2 + 30, HEIGHT - 100),  # Southwest
+            (WIDTH//2 + 100//2 + 30, WIDTH - 100, HEIGHT//2 + 100//2 + 30, HEIGHT - 100)  # Southeast
+        ]
+        
+        # Generate buildings for each quadrant
+        for x_min, x_max, y_min, y_max in quadrants:
+            for _ in range(5):
+                x = random.randint(x_min, x_max)
+                y = random.randint(y_min, y_max)
+                width = random.randint(40, 100)
+                height = random.randint(40, 100)
+                color = random.choice(BUILDING_COLORS)
+                self.buildings.append((x, y, width, height, color))
     
     def reset(self):
         """Reset the simulation to its initial state"""

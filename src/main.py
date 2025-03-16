@@ -2,11 +2,11 @@ import sys
 import pygame
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
-from config import WIDTH, HEIGHT, WHITE, DEBUG_MODE, SLOW_MODE
-from simulation import Simulation
-from data_recorder import DataRecorder
-from shared import PygameContext
-from ui.main_window import MainWindow
+from src.config import WIDTH, HEIGHT, WHITE, DEBUG_MODE, SLOW_MODE
+from src.simulation import Simulation
+from src.data_recorder import DataRecorder
+from src.shared import PygameContext
+from src.ui.main_window import MainWindow
 
 def main():
     # Initialize PyQt application

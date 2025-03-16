@@ -89,10 +89,13 @@ class TrafficRLAgent(QObject):
         
         # Custom callback for visualization
         def callback(locals, globals):
-            if not self.is_training:
-                return False
-                
+            self.mutex.lock()
             try:
+                # Check if training was stopped
+                if not self.is_training:
+                    self.mutex.unlock()
+                    return False
+                    
                 # Get current traffic counts
                 traffic_counts = self.env.get_attr('simulation')[0].get_traffic_counts()
                 self.traffic_update.emit(traffic_counts)
@@ -102,8 +105,10 @@ class TrafficRLAgent(QObject):
                 current_reward = locals.get('rewards', [0])[0]
                 self.reward_update.emit(current_step, current_reward)
                 
+                self.mutex.unlock()
                 return True
             except Exception as e:
+                self.mutex.unlock()
                 print(f"Error in callback: {str(e)}")
                 return False
         

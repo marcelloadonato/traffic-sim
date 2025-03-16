@@ -1,6 +1,6 @@
 import random
-from config import TOTAL_VEHICLES, EPISODE_LENGTH, MAX_VEHICLES_PER_LANE, VEHICLE_COLORS
-from agent import Vehicle
+from src.config import TOTAL_VEHICLES, EPISODE_LENGTH, MAX_VEHICLES_PER_LANE, VEHICLE_COLORS
+from src.agent import Vehicle
 
 DETERMINISTIC_SPAWNING = True  # or True for fixed patterns
 

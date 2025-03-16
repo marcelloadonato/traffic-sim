@@ -10,14 +10,6 @@ screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("Traffic Simulation")
 clock = pygame.time.Clock()
 
-def get_screen():
-    """Get the Pygame screen"""
-    return screen
-
-def get_clock():
-    """Get the Pygame clock"""
-    return clock
-
 def to_tensor(data, dtype=torch.float32):
     """Convert data to a tensor on the appropriate device"""
     if isinstance(data, (list, tuple)):

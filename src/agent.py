@@ -1,5 +1,5 @@
 import random
-from config import LANES, INTERMEDIATE_POSITIONS
+from src.config import LANES, INTERMEDIATE_POSITIONS
 
 class Vehicle:
     def __init__(self, start, destination):
