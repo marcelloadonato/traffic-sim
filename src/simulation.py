@@ -295,8 +295,8 @@ class Simulation:
                 # Check if vehicle has reached the edge of the map
                 if isinstance(current_coords, tuple):
                     x, y = current_coords
-                    # Only remove if we've reached the destination
-                    if vehicle.position == vehicle.destination:
+                    # Only remove if we've reached the destination and are at the edge
+                    if vehicle.position == vehicle.destination and vehicle.is_at_edge():
                         vehicles_to_remove.append(vehicle)
                         continue
                 
@@ -321,10 +321,20 @@ class Simulation:
                     if vehicle.position_time >= vehicle.position_threshold:
                         vehicle.position = next_pos
                         vehicle.position_time = 0
-                        vehicle.interpolated_position = None
+                        
+                        # If we're exiting the intersection, ensure we maintain position
+                        if vehicle.position in ['north', 'south', 'east', 'west']:
+                            vehicle.interpolated_position = LANES[vehicle.position]['out']
+                            vehicle.state = "moving"  # Keep moving state for proper award calculation
+                        else:
+                            vehicle.interpolated_position = None
                 elif should_stop:
                     vehicle.state = "waiting"
-                    vehicle.interpolated_position = current_coords if isinstance(current_coords, tuple) else None
+                    # Maintain the current position when stopped
+                    if isinstance(current_coords, tuple):
+                        vehicle.interpolated_position = current_coords
+                    # Reset position time to ensure we stay in place
+                    vehicle.position_time = 0
             
             except (ValueError, IndexError) as e:
                 # If there's an error with the route, remove the vehicle
@@ -392,8 +402,10 @@ class Simulation:
             # Update simulation state
             self.update_traffic_lights()
             
-            # Spawn new vehicles if needed
-            spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles, self)
+            # Only spawn new vehicles if not in test mode
+            if not hasattr(self, 'test_mode') or not self.test_mode:
+                # Spawn new vehicles if needed
+                spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles, self)
             
             # Update vehicles
             self.update_vehicles()
@@ -663,42 +675,50 @@ class Simulation:
         if (start == 'north' and end == 'west') or (start == 'east' and end == 'south'):
             route.extend([
                 (WIDTH//2 - 25, HEIGHT//2 - 25),
-                (WIDTH//2 - 50, HEIGHT//2)
+                (WIDTH//2 - 50, HEIGHT//2),
+                (WIDTH//2 - 100, HEIGHT//2)  # Additional point past intersection
             ])
         elif (start == 'north' and end == 'east') or (start == 'west' and end == 'south'):
             route.extend([
                 (WIDTH//2 + 25, HEIGHT//2 - 25),
-                (WIDTH//2 + 50, HEIGHT//2)
+                (WIDTH//2 + 50, HEIGHT//2),
+                (WIDTH//2 + 100, HEIGHT//2)  # Additional point past intersection
             ])
         elif (start == 'south' and end == 'west') or (start == 'east' and end == 'north'):
             route.extend([
                 (WIDTH//2 - 25, HEIGHT//2 + 25),
-                (WIDTH//2 - 50, HEIGHT//2)
+                (WIDTH//2 - 50, HEIGHT//2),
+                (WIDTH//2 - 100, HEIGHT//2)  # Additional point past intersection
             ])
         elif (start == 'south' and end == 'east') or (start == 'west' and end == 'north'):
             route.extend([
                 (WIDTH//2 + 25, HEIGHT//2 + 25),
-                (WIDTH//2 + 50, HEIGHT//2)
+                (WIDTH//2 + 50, HEIGHT//2),
+                (WIDTH//2 + 100, HEIGHT//2)  # Additional point past intersection
             ])
         elif start == 'north' and end == 'south':
             route.extend([
                 (WIDTH//2, HEIGHT//2),
-                (WIDTH//2, HEIGHT//2 + 50)
+                (WIDTH//2, HEIGHT//2 + 50),
+                (WIDTH//2, HEIGHT//2 + 100)  # Additional point past intersection
             ])
         elif start == 'south' and end == 'north':
             route.extend([
                 (WIDTH//2, HEIGHT//2),
-                (WIDTH//2, HEIGHT//2 - 50)
+                (WIDTH//2, HEIGHT//2 - 50),
+                (WIDTH//2, HEIGHT//2 - 100)  # Additional point past intersection
             ])
         elif start == 'east' and end == 'west':
             route.extend([
                 (WIDTH//2, HEIGHT//2),
-                (WIDTH//2 - 50, HEIGHT//2)
+                (WIDTH//2 - 50, HEIGHT//2),
+                (WIDTH//2 - 100, HEIGHT//2)  # Additional point past intersection
             ])
         elif start == 'west' and end == 'east':
             route.extend([
                 (WIDTH//2, HEIGHT//2),
-                (WIDTH//2 + 50, HEIGHT//2)
+                (WIDTH//2 + 50, HEIGHT//2),
+                (WIDTH//2 + 100, HEIGHT//2)  # Additional point past intersection
             ])
         
         # Add exit path
@@ -711,4 +731,74 @@ class Simulation:
         elif end == 'west':
             route.extend([(100, HEIGHT//2), (50, HEIGHT//2), end])
         
-        return route 
+        return route
+
+    def create_test_vehicle(self):
+        """Create a single test vehicle moving from east to west"""
+        # Set test mode flag
+        self.test_mode = True
+        
+        # Clear any existing vehicles
+        self.active_vehicles = []
+        self.removed_vehicles = []
+        
+        # Create a route from east to west
+        route = self.create_route('east', 'west')
+        
+        # Create the test vehicle
+        test_vehicle = Vehicle(
+            route=route,
+            position='east',
+            vehicle_type="car",
+            position_threshold=40
+        )
+        test_vehicle.destination = 'west'
+        test_vehicle.interpolated_position = None
+        test_vehicle.id = "TEST_VEHICLE"  # Special ID for tracking
+        
+        # Add vehicle to simulation
+        self.active_vehicles.append(test_vehicle)
+        print("\n=== Test Vehicle Created ===")
+        print(f"Starting Position: east")
+        print(f"Destination: west")
+        print(f"Route: {route}")
+        print("=========================\n")
+        
+        return test_vehicle
+
+    def run_test_mode(self):
+        """Run simulation in test mode with a single vehicle"""
+        # Create test vehicle
+        test_vehicle = self.create_test_vehicle()
+        
+        # Set initial light states
+        self.ns_light = "red"
+        self.ew_light = "green"
+        
+        while self.running and test_vehicle in self.active_vehicles:
+            # Handle events
+            self.handle_events()
+            
+            # Update traffic lights
+            self.update_traffic_lights()
+            
+            # Update vehicles
+            self.update_vehicles()
+            
+            # Print vehicle state
+            print(f"\nTick {self.current_tick}:")
+            print(f"Position: {test_vehicle.position}")
+            print(f"State: {test_vehicle.state}")
+            if hasattr(test_vehicle, 'interpolated_position'):
+                print(f"Interpolated Position: {test_vehicle.interpolated_position}")
+            print(f"Traffic Lights - NS: {self.ns_light}, EW: {self.ew_light}")
+            
+            # Draw everything
+            self.draw(None)
+            
+            # Control simulation speed
+            clock = get_clock()
+            clock.tick(5)  # Slow speed for observation
+            
+            # Increment tick
+            self.current_tick += 1 

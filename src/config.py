@@ -108,23 +108,23 @@ TOTAL_VEHICLES = 20
 # Lane positions (adjusted for new window size)
 LANES = {
     'north': {
-        'in': (WIDTH//2 - ROAD_WIDTH//4, 0),
-        'out': (WIDTH//2 + ROAD_WIDTH//4, 0),
+        'in': (WIDTH//2 - ROAD_WIDTH//4, 0),  # Northbound lane
+        'out': (WIDTH//2 - ROAD_WIDTH//4, 0),
         'queue': [(WIDTH//2 - ROAD_WIDTH//4, y) for y in range(50, HEIGHT//2 - ROAD_WIDTH//2 - 50, 30)]
     },
     'south': {
-        'in': (WIDTH//2 + ROAD_WIDTH//4, HEIGHT),
-        'out': (WIDTH//2 - ROAD_WIDTH//4, HEIGHT),
+        'in': (WIDTH//2 + ROAD_WIDTH//4, HEIGHT),  # Southbound lane
+        'out': (WIDTH//2 + ROAD_WIDTH//4, HEIGHT),
         'queue': [(WIDTH//2 + ROAD_WIDTH//4, y) for y in range(HEIGHT - 50, HEIGHT//2 + ROAD_WIDTH//2 + 50, -30)]
     },
     'east': {
-        'in': (WIDTH, HEIGHT//2 + ROAD_WIDTH//4),
-        'out': (WIDTH, HEIGHT//2 - ROAD_WIDTH//4),
+        'in': (WIDTH, HEIGHT//2 + ROAD_WIDTH//4),  # Eastbound lane
+        'out': (WIDTH, HEIGHT//2 + ROAD_WIDTH//4),
         'queue': [(x, HEIGHT//2 + ROAD_WIDTH//4) for x in range(WIDTH - 50, WIDTH//2 + ROAD_WIDTH//2 + 50, -30)]
     },
     'west': {
-        'in': (0, HEIGHT//2 - ROAD_WIDTH//4),
-        'out': (0, HEIGHT//2 + ROAD_WIDTH//4),
+        'in': (0, HEIGHT//2 - ROAD_WIDTH//4),  # Westbound lane
+        'out': (0, HEIGHT//2 - ROAD_WIDTH//4),
         'queue': [(x, HEIGHT//2 - ROAD_WIDTH//4) for x in range(50, WIDTH//2 - ROAD_WIDTH//2 - 50, 30)]
     }
 }

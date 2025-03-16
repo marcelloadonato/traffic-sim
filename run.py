@@ -2,6 +2,11 @@
 import sys
 import os
 import traceback
+import pygame
+from src.simulation import Simulation
+from src.data_recorder import DataRecorder
+from src.config import WIDTH, HEIGHT
+from src.shared import PygameContext
 
 def main():
     try:
@@ -10,9 +15,33 @@ def main():
         if project_root not in sys.path:
             sys.path.append(project_root)
         
-        # Import and run the main function
-        from src.main import main
-        main()
+        # Initialize Pygame
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Traffic Simulation")
+        
+        # Initialize Pygame context
+        PygameContext.initialize(screen)
+        
+        # Check for test mode argument
+        test_mode = "--test" in sys.argv
+        
+        # Create simulation instance
+        simulation = Simulation()
+        
+        if test_mode:
+            # Run in test mode with a single vehicle
+            simulation.run_test_mode()
+        else:
+            # Normal simulation mode
+            data_recorder = DataRecorder()
+            simulation.set_data_recorder(data_recorder)
+            
+            # Main game loop
+            while simulation.running:
+                simulation.step(data_recorder)
+        
+        pygame.quit()
     except ImportError as e:
         print(f"Error importing required modules: {e}")
         print("Make sure all dependencies are installed: pip install -r requirements.txt")

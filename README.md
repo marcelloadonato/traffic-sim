@@ -12,23 +12,32 @@ A traffic simulation that uses reinforcement learning to optimize traffic light 
 - RL dashboard showing agent's observations and decisions
 - Score tracking and achievements
 - Leaderboard of top performances
-- Multiple traffic generation modes (Random, Rush Hour, Custom)
+- Multiple traffic generation modes (Random, Pattern, Peak Hours)
 - Real-time performance metrics and statistics
 - CUDA support for faster training
 - Collision detection and prevention
 - Vehicle spawn scheduling system
 - Building generation for realistic urban environment
+- Advanced metrics tracking and visualization
+- Customizable RL parameters through UI
+- Episode progress tracking and learning curves
+- Interactive control panel with real-time adjustments
+- Comprehensive performance monitoring dashboard
 
 ## How It Works
 
 The RL agent observes the number of waiting vehicles in each direction and chooses traffic light states to optimize traffic flow. It earns rewards based on:
 - Reducing average commute time (-0.2 * commute)
 - Maintaining high driver satisfaction (+satisfaction)
+- Optimizing traffic flow (+0.1 per moving vehicle)
+- Minimizing wait times (-0.2 per waiting vehicle)
+- Maximizing overall satisfaction (+0.3 * average satisfaction)
 
 The agent learns to balance these objectives through experience, improving its strategy over time.
 
 ## Controls
 
+### Keyboard Controls
 - `K_t`: Toggle tutorial mode (when not training)
 - `K_m`: Toggle manual control mode (when not training)
 - `K_SPACE`: Toggle traffic lights (in manual mode)
@@ -38,9 +47,20 @@ The agent learns to balance these objectives through experience, improving its s
 - `K_e`: End current episode
 - `K_n`: Start new episode
 - `K_t`: Start training (when not in tutorial mode)
-- `K_r`: Toggle between traffic generation modes (Random/Rush Hour/Custom)
+- `K_r`: Toggle between traffic generation modes
 - `K_1`-`K_4`: Adjust simulation speed (1x-4x)
 - `K_ESCAPE`: Quit simulation
+
+### UI Controls
+- Speed Slider: Adjust simulation speed (1-60 FPS)
+- Training Steps Slider: Set number of training steps (100-20000)
+- Traffic Mode Selector: Choose between Random, Pattern, and Peak Hours modes
+- Start/Stop/Reset buttons: Control training process
+- RL Parameter Controls:
+  - Learning Rate (0.0001-0.01)
+  - Batch Size (32-256)
+  - Steps per Update (512-4096)
+  - Discount Factor (0.9-0.999)
 
 ## Simulation Modes
 
@@ -150,4 +170,32 @@ This simulation is designed to help students understand:
 
 ## License
 
-MIT License - feel free to use this project for educational purposes. 
+MIT License - feel free to use this project for educational purposes.
+
+## Performance Metrics
+
+The simulation tracks and visualizes various performance metrics:
+- Average Wait Time (seconds)
+- Traffic Flow Rate
+- Queue Length per Direction
+- Vehicle Density
+- Average Vehicle Speed
+- Stops per Vehicle
+- Fuel Efficiency
+- Driver Satisfaction
+- Light Change Frequency
+- Episode Completion Rate
+
+### Learning Progress Visualization
+- Episode Score Progression
+- Average Satisfaction Trends
+- Average Commute Time Evolution
+- Light Changes Analysis
+- Real-time Performance Graphs
+
+### Data Recording
+- Detailed episode metrics saved to CSV
+- Top performance leaderboard
+- Learning progress plots
+- Achievement tracking
+- Vehicle completion statistics 

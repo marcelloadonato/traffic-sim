@@ -180,7 +180,7 @@ class Vehicle:
         
         return route
     
-    def update(self, light_state, current_fps=30):
+    def update(self, light_state, vehicles=None):
         """Update vehicle state and position"""
         self.total_ticks += 1
         
@@ -211,11 +211,18 @@ class Vehicle:
         
         # Check if we've reached our destination
         if self.position == self.destination:
-            self.state = "arrived"
-            self.animation_offset = 0  # Reset animation offset
-            if self.log_counter == 0:
-                print(f"Vehicle arrived at destination: {self.destination}")
-            return True
+            # Only mark as arrived if we're at the edge
+            if self.is_at_edge():
+                self.state = "arrived"
+                self.animation_offset = 0  # Reset animation offset
+                if self.log_counter == 0:
+                    print(f"Vehicle arrived at destination: {self.destination}")
+                return True
+            else:
+                # Keep moving if we're not at the edge yet
+                self.state = "moving"
+                self.speed = self.base_speed
+                return False
         
         # Get current position index in route
         current_idx = self.route.index(self.position)
@@ -240,61 +247,34 @@ class Vehicle:
                 self.waiting_time += 1
                 self.animation_offset = 0
                 self.speed = 0  # Ensure we stop completely
+                self.position_time = 0  # Reset position time to maintain position
+                return False  # Prevent further movement this tick
         
-        # Stop if there's a collision ahead
-        if self.check_collision_ahead():
-            should_stop = True
-            if not self.stopped_for_collision and self.log_counter == 0:
-                print(f"Vehicle stopped for collision: {self.position}")
-            self.stopped_for_collision = True
-            self.state = "waiting"
-            self.waiting_time += 1
-            self.animation_offset = 0  # Reset animation when stopping
-            self.speed = 0  # Ensure we stop completely
+        # Check for vehicles ahead
+        if not should_stop and vehicles:
+            for other_vehicle in vehicles:
+                if other_vehicle != self and other_vehicle.state != "arrived":
+                    if self.is_behind(other_vehicle):
+                        should_stop = True
+                        if self.state != "waiting" and self.log_counter == 0:
+                            print(f"Vehicle stopped behind other vehicle: {self.position}")
+                        self.state = "waiting"
+                        self.waiting_time += 1
+                        self.animation_offset = 0
+                        self.speed = 0  # Ensure we stop completely
+                        self.position_time = 0  # Reset position time to maintain position
+                        return False  # Prevent further movement this tick
         
-        # Update position if we're not stopping
+        # Update position if not stopped
         if not should_stop:
             self.state = "moving"
-            self.stopped_for_collision = False
             self.waiting_time = 0
-            self.speed = self.base_speed  # Restore normal speed
-            
-            # Adjust movement speed based on position
-            base_threshold = self.position_threshold
-            if self.position == 'intersection':
-                # Slower movement through intersection
-                base_threshold = self.position_threshold * 1.5
-                self.speed = self.base_speed * 0.8  # Slower in intersection
-            elif isinstance(self.position, tuple):
-                # Faster movement between waypoints
-                base_threshold = self.position_threshold // 2
-            
-            self.position_time += 1
-            progress = min(self.position_time / base_threshold, 1.0)
-            fps_scale = current_fps / 30.0
-            
-            # Calculate movement based on current speed
-            self.animation_offset = int(progress * self.speed * fps_scale)
-            
-            if self.position_time >= base_threshold:
+            self.position_time += self.speed
+            if self.position_time >= 1.0:
                 self.position = next_pos
                 self.position_time = 0
                 self.animation_offset = 0
-                if self.position in ['north', 'south', 'east', 'west']:
-                    self.queue_position = min(self.queue_position + 1, 3)
-        
-        # Decrease satisfaction while waiting
-        if self.state == "waiting":
-            if self.waiting_time % 10 == 0:  # Decrease satisfaction every 10 ticks instead of 5
-                self.satisfaction = max(0, self.satisfaction - 0.1)  # Decrease by 0.1 instead of 0.2
-                if self.log_counter == 0:
-                    print(f"Vehicle satisfaction decreased to: {self.satisfaction:.1f}")
-        else:
-            # Gradually recover satisfaction while moving
-            if self.waiting_time % 15 == 0:  # Recover satisfaction every 15 ticks
-                self.satisfaction = min(10, self.satisfaction + 0.05)  # Recover by 0.05
-                if self.log_counter == 0:
-                    print(f"Vehicle satisfaction increased to: {self.satisfaction:.1f}")
+                return True
         
         return False
     

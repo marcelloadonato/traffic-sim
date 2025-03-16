@@ -250,98 +250,43 @@ def draw_vehicle(vehicle, debug_mode=False):
         else:
             return  # Skip drawing if position cannot be determined
     
-    # Calculate vehicle size based on type
-    base_size = 20
-    if vehicle.vehicle_type == "truck":
-        size = int(base_size * 1.5)
-    elif vehicle.vehicle_type == "van":
-        size = int(base_size * 1.2)
-    else:  # car
-        size = base_size
+    # Get vehicle direction
+    direction = get_vehicle_direction(vehicle)
     
-    # Calculate color based on satisfaction (red when low, green when high)
-    satisfaction_normalized = max(0, min(1, vehicle.satisfaction / 10.0))
-    color = (
-        int(255 * (1 - satisfaction_normalized)),  # Red component
-        int(255 * satisfaction_normalized),        # Green component
-        0                                         # Blue component
-    )
+    # Determine vehicle color based on type
+    if not hasattr(vehicle, 'color') or vehicle.color is None:
+        if vehicle.vehicle_type == "car":
+            vehicle.color = random.choice([(255, 0, 0), (0, 0, 255), (0, 255, 0), (255, 165, 0), (128, 0, 128)])
+        elif vehicle.vehicle_type == "truck":
+            vehicle.color = random.choice([(192, 192, 192), (139, 69, 19), (47, 79, 79)])
+        else:  # van
+            vehicle.color = random.choice([(255, 255, 255), (255, 215, 0), (70, 130, 180)])
     
-    # Draw vehicle shadow (offset slightly for 3D effect)
-    shadow_offset = 2
-    pygame.draw.rect(screen, (50, 50, 50), 
-                    (x - size//2 + shadow_offset, 
-                     y - size//2 + shadow_offset, 
-                     size, size))
+    # Draw the vehicle
+    draw_car((x, y), vehicle.color, direction, vehicle)
     
-    # Draw vehicle body
-    pygame.draw.rect(screen, color, 
-                    (x - size//2, y - size//2, size, size))
-    
-    # Draw direction arrow
-    arrow_size = size * 0.8
-    arrow_color = (255, 255, 255)  # White arrow
-    arrow_shadow_color = (0, 0, 0)  # Black shadow
-    
-    # Get next position to determine direction
-    current_idx = vehicle.route.index(vehicle.position)
-    next_pos = None if current_idx >= len(vehicle.route) - 1 else vehicle.route[current_idx + 1]
-    
-    # Calculate arrow points based on movement direction
-    if isinstance(next_pos, tuple) and isinstance(vehicle.position, tuple):
-        dx = next_pos[0] - vehicle.position[0]
-        dy = next_pos[1] - vehicle.position[1]
-    elif next_pos == 'intersection':
-        # Use the position after intersection
-        if current_idx + 2 < len(vehicle.route):
-            after_intersection = vehicle.route[current_idx + 2]
-            if isinstance(after_intersection, tuple):
-                dx = after_intersection[0] - x
-                dy = after_intersection[1] - y
-            else:
-                dx = dy = 0
-        else:
-            dx = dy = 0
-    else:
-        dx = dy = 0
-    
-    if dx != 0 or dy != 0:
-        # Normalize direction vector
-        length = (dx * dx + dy * dy) ** 0.5
-        if length > 0:
-            dx /= length
-            dy /= length
-            
-            # Calculate arrow points
-            arrow_points = [
-                (x + dx * arrow_size//2, y + dy * arrow_size//2),  # Tip
-                (x - dx * arrow_size//2 - dy * arrow_size//4, y - dy * arrow_size//2 + dx * arrow_size//4),  # Left base
-                (x - dx * arrow_size//2 + dy * arrow_size//4, y - dy * arrow_size//2 - dx * arrow_size//4)   # Right base
-            ]
-            
-            # Draw arrow shadow
-            shadow_points = [(x + shadow_offset, y + shadow_offset) for x, y in arrow_points]
-            pygame.draw.polygon(screen, arrow_shadow_color, shadow_points)
-            
-            # Draw arrow
-            pygame.draw.polygon(screen, arrow_color, arrow_points)
-    
-    # Draw vehicle ID
-    font = pygame.font.Font(None, 20)
-    id_text = font.render(str(id(vehicle) % 1000), True, (255, 255, 255))
-    screen.blit(id_text, (x - 10, y - 10))
-    
-    # Draw debug info if enabled
+    # Draw vehicle ID with better visibility
     if debug_mode:
-        debug_font = pygame.font.Font(None, 16)
-        debug_info = [
-            f"Pos: {vehicle.position}",
-            f"State: {vehicle.state}",
-            f"Sat: {vehicle.satisfaction:.1f}"
-        ]
-        for i, info in enumerate(debug_info):
-            text = debug_font.render(info, True, (255, 255, 255))
-            screen.blit(text, (x + size//2 + 5, y - size//2 + i * 15))
+        # Create a background for the ID
+        font = pygame.font.Font(None, 24)  # Larger font size
+        id_text = str(id(vehicle) % 1000)  # Keep last 3 digits of ID
+        text_surface = font.render(id_text, True, WHITE)
+        text_rect = text_surface.get_rect()
+        text_rect.center = (x, y)
+        
+        # Draw a semi-transparent background for better readability
+        padding = 2
+        background_rect = pygame.Rect(text_rect.x - padding,
+                                    text_rect.y - padding,
+                                    text_rect.width + padding * 2,
+                                    text_rect.height + padding * 2)
+        background_surface = pygame.Surface((background_rect.width, background_rect.height))
+        background_surface.fill(BLACK)
+        background_surface.set_alpha(160)  # Semi-transparent background
+        screen.blit(background_surface, background_rect)
+        
+        # Draw the ID text
+        screen.blit(text_surface, text_rect)
 
 def draw_car(pos, color, direction, vehicle):
     """Draw a car-like shape at the given position with the given color and direction"""

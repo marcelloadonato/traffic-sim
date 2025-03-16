@@ -226,16 +226,22 @@ def check_collision(vehicle, other_vehicles, light_state):
         # Check if light is red or yellow for this direction
         if ((vehicle.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
             (vehicle.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
-            # Only stop if we're close enough to the intersection
-            if vehicle.position in ['north', 'south']:
-                distance_to_intersection = abs(y - HEIGHT//2)
-            else:
-                distance_to_intersection = abs(x - WIDTH//2)
-            
-            # Stop if we're within 50 pixels of the intersection
-            if distance_to_intersection < 50:
-                vehicle.stopped_for_collision = True
-                return True
+            # Get queue positions for this lane
+            queue_positions = LANES[vehicle.position]['queue']
+            if queue_positions:
+                # Get the last queue position (closest to intersection)
+                last_queue = queue_positions[-1]
+                
+                # Calculate distance to the last queue position
+                if vehicle.position in ['north', 'south']:
+                    distance_to_queue = abs(y - last_queue[1])
+                else:
+                    distance_to_queue = abs(x - last_queue[0])
+                
+                # Stop if we're close enough to the queue position
+                if distance_to_queue < 20:  # Small threshold to ensure we stop at queue position
+                    vehicle.stopped_for_collision = True
+                    return True
     
     # Check for collisions with other vehicles
     for other in other_vehicles:
