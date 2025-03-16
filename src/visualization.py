@@ -38,100 +38,188 @@ def draw_buildings(buildings):
 def draw_road():
     """Draw the road with lanes and markings"""
     screen = get_screen()
-    # Draw grass background
-    pygame.draw.rect(screen, GRASS_GREEN, (0, 0, WIDTH, HEIGHT))
     
-    # Draw horizontal road
-    pygame.draw.rect(screen, GRAY, (0, HEIGHT//2 - ROAD_WIDTH//2, WIDTH, ROAD_WIDTH))
+    # Create static grass texture if it doesn't exist
+    if not hasattr(draw_road, 'grass_surface'):
+        draw_road.grass_surface = pygame.Surface((WIDTH, HEIGHT))
+        draw_road.grass_surface.fill(GRASS_GREEN)
+        # Add subtle texture variations
+        for y in range(0, HEIGHT, 20):
+            for x in range(0, WIDTH, 20):
+                variation = random.randint(-10, 10)
+                grass_color = (34 + variation, 139 + variation, 34 + variation)
+                pygame.draw.rect(draw_road.grass_surface, grass_color, (x, y, 20, 20))
     
-    # Draw vertical road
-    pygame.draw.rect(screen, GRAY, (WIDTH//2 - ROAD_WIDTH//2, 0, ROAD_WIDTH, HEIGHT))
+    # Create static road texture if it doesn't exist
+    if not hasattr(draw_road, 'road_h') or not hasattr(draw_road, 'road_v'):
+        # Horizontal road
+        draw_road.road_h = pygame.Surface((WIDTH, ROAD_WIDTH))
+        draw_road.road_h.fill(GRAY)
+        # Vertical road
+        draw_road.road_v = pygame.Surface((ROAD_WIDTH, HEIGHT))
+        draw_road.road_v.fill(GRAY)
+        
+        # Add static asphalt texture
+        for i in range(2000):
+            # Horizontal road texture
+            x = random.randint(0, WIDTH-1)
+            y = random.randint(0, ROAD_WIDTH-1)
+            color_var = random.randint(-10, 10)
+            pygame.draw.circle(draw_road.road_h, (128 + color_var, 128 + color_var, 128 + color_var), (x, y), 1)
+            
+            # Vertical road texture
+            x = random.randint(0, ROAD_WIDTH-1)
+            y = random.randint(0, HEIGHT-1)
+            color_var = random.randint(-10, 10)
+            pygame.draw.circle(draw_road.road_v, (128 + color_var, 128 + color_var, 128 + color_var), (x, y), 1)
+    
+    # Draw the static textures
+    screen.blit(draw_road.grass_surface, (0, 0))
+    screen.blit(draw_road.road_h, (0, HEIGHT//2 - ROAD_WIDTH//2))
+    screen.blit(draw_road.road_v, (WIDTH//2 - ROAD_WIDTH//2, 0))
+    
+    # Draw road edges (darker lines)
+    pygame.draw.line(screen, DARK_GRAY, (0, HEIGHT//2 - ROAD_WIDTH//2), (WIDTH, HEIGHT//2 - ROAD_WIDTH//2), 3)
+    pygame.draw.line(screen, DARK_GRAY, (0, HEIGHT//2 + ROAD_WIDTH//2), (WIDTH, HEIGHT//2 + ROAD_WIDTH//2), 3)
+    pygame.draw.line(screen, DARK_GRAY, (WIDTH//2 - ROAD_WIDTH//2, 0), (WIDTH//2 - ROAD_WIDTH//2, HEIGHT), 3)
+    pygame.draw.line(screen, DARK_GRAY, (WIDTH//2 + ROAD_WIDTH//2, 0), (WIDTH//2 + ROAD_WIDTH//2, HEIGHT), 3)
     
     # Draw lane dividers - horizontal road
     center_y = HEIGHT // 2
-    for x in range(0, WIDTH, LANE_MARKER_LENGTH + LANE_MARKER_GAP):
+    dash_length = LANE_MARKER_LENGTH
+    gap_length = LANE_MARKER_GAP
+    
+    # Draw dashed lines with shadow effect
+    for x in range(0, WIDTH, dash_length + gap_length):
         if x < WIDTH//2 - ROAD_WIDTH//2 or x > WIDTH//2 + ROAD_WIDTH//2:
-            pygame.draw.rect(screen, WHITE, (x, center_y - LANE_MARKER_WIDTH//2, LANE_MARKER_LENGTH, LANE_MARKER_WIDTH))
+            # Draw shadow
+            pygame.draw.rect(screen, DARK_GRAY, (x, center_y - LANE_MARKER_WIDTH//2 + 1, dash_length, LANE_MARKER_WIDTH))
+            # Draw white line
+            pygame.draw.rect(screen, WHITE, (x, center_y - LANE_MARKER_WIDTH//2, dash_length, LANE_MARKER_WIDTH))
     
     # Draw lane dividers - vertical road
     center_x = WIDTH // 2
-    for y in range(0, HEIGHT, LANE_MARKER_LENGTH + LANE_MARKER_GAP):
+    for y in range(0, HEIGHT, dash_length + gap_length):
         if y < HEIGHT//2 - ROAD_WIDTH//2 or y > HEIGHT//2 + ROAD_WIDTH//2:
-            pygame.draw.rect(screen, WHITE, (center_x - LANE_MARKER_WIDTH//2, y, LANE_MARKER_WIDTH, LANE_MARKER_LENGTH))
+            # Draw shadow
+            pygame.draw.rect(screen, DARK_GRAY, (center_x - LANE_MARKER_WIDTH//2 + 1, y, LANE_MARKER_WIDTH, dash_length))
+            # Draw white line
+            pygame.draw.rect(screen, WHITE, (center_x - LANE_MARKER_WIDTH//2, y, LANE_MARKER_WIDTH, dash_length))
     
-    # Draw intersection box
-    pygame.draw.rect(screen, DARK_GRAY, (WIDTH//2 - ROAD_WIDTH//2, HEIGHT//2 - ROAD_WIDTH//2, ROAD_WIDTH, ROAD_WIDTH))
+    # Draw intersection box with crosswalk
+    intersection_rect = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2, HEIGHT//2 - ROAD_WIDTH//2, ROAD_WIDTH, ROAD_WIDTH)
+    pygame.draw.rect(screen, DARK_GRAY, intersection_rect)
     
-    # Draw crosswalks
+    # Draw crosswalks with 3D effect
     crosswalk_width = 5
     crosswalk_gap = 5
+    crosswalk_length = 20
+    shadow_offset = 1
     
     # North crosswalk
     for x in range(WIDTH//2 - ROAD_WIDTH//2 + 10, WIDTH//2 + ROAD_WIDTH//2 - 10, crosswalk_width + crosswalk_gap):
-        pygame.draw.rect(screen, WHITE, (x, HEIGHT//2 - ROAD_WIDTH//2 - 20, crosswalk_width, 20))
+        # Draw shadow
+        pygame.draw.rect(screen, DARK_GRAY, (x + shadow_offset, HEIGHT//2 - ROAD_WIDTH//2 - crosswalk_length + shadow_offset, 
+                                           crosswalk_width, crosswalk_length))
+        # Draw white stripe
+        pygame.draw.rect(screen, WHITE, (x, HEIGHT//2 - ROAD_WIDTH//2 - crosswalk_length, crosswalk_width, crosswalk_length))
     
     # South crosswalk
     for x in range(WIDTH//2 - ROAD_WIDTH//2 + 10, WIDTH//2 + ROAD_WIDTH//2 - 10, crosswalk_width + crosswalk_gap):
-        pygame.draw.rect(screen, WHITE, (x, HEIGHT//2 + ROAD_WIDTH//2, crosswalk_width, 20))
+        pygame.draw.rect(screen, DARK_GRAY, (x + shadow_offset, HEIGHT//2 + ROAD_WIDTH//2 + shadow_offset, 
+                                           crosswalk_width, crosswalk_length))
+        pygame.draw.rect(screen, WHITE, (x, HEIGHT//2 + ROAD_WIDTH//2, crosswalk_width, crosswalk_length))
     
     # East crosswalk
     for y in range(HEIGHT//2 - ROAD_WIDTH//2 + 10, HEIGHT//2 + ROAD_WIDTH//2 - 10, crosswalk_width + crosswalk_gap):
-        pygame.draw.rect(screen, WHITE, (WIDTH//2 + ROAD_WIDTH//2, y, 20, crosswalk_width))
+        pygame.draw.rect(screen, DARK_GRAY, (WIDTH//2 + ROAD_WIDTH//2 + shadow_offset, y + shadow_offset, 
+                                           crosswalk_length, crosswalk_width))
+        pygame.draw.rect(screen, WHITE, (WIDTH//2 + ROAD_WIDTH//2, y, crosswalk_length, crosswalk_width))
     
     # West crosswalk
     for y in range(HEIGHT//2 - ROAD_WIDTH//2 + 10, HEIGHT//2 + ROAD_WIDTH//2 - 10, crosswalk_width + crosswalk_gap):
-        pygame.draw.rect(screen, WHITE, (WIDTH//2 - ROAD_WIDTH//2 - 20, y, 20, crosswalk_width))
+        pygame.draw.rect(screen, DARK_GRAY, (WIDTH//2 - ROAD_WIDTH//2 - crosswalk_length + shadow_offset, y + shadow_offset, 
+                                           crosswalk_length, crosswalk_width))
+        pygame.draw.rect(screen, WHITE, (WIDTH//2 - ROAD_WIDTH//2 - crosswalk_length, y, crosswalk_length, crosswalk_width))
 
 def draw_traffic_lights(ns_light, ew_light):
     """Draw traffic lights on all four sides of the intersection"""
     screen = get_screen()
     
-    # North traffic light
-    # Traffic light pole
-    pygame.draw.rect(screen, BLACK, (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 60, 10, 60))
-    # Traffic light housing
-    light_box = pygame.Rect(WIDTH//2 + ROAD_WIDTH//4 - 5, HEIGHT//2 - ROAD_WIDTH//2 - 100, 20, 50)
-    pygame.draw.rect(screen, BLACK, light_box)
-    # Lights
-    pygame.draw.ellipse(screen, (100, 0, 0) if ns_light != "red" else RED, 
-                       (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 95, 10, 10))  # Red
-    pygame.draw.ellipse(screen, (100, 100, 0) if ns_light != "yellow" else YELLOW,
-                       (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 80, 10, 10))  # Yellow
-    pygame.draw.ellipse(screen, (0, 100, 0) if ns_light != "green" else GREEN,
-                       (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 65, 10, 10))  # Green
+    def draw_light_housing(x, y, width, height, vertical=True):
+        """Helper function to draw a traffic light housing with 3D effect"""
+        # Draw main housing shadow
+        shadow_offset = 3
+        pygame.draw.rect(screen, (30, 30, 30), 
+                        (x + shadow_offset, y + shadow_offset, width, height), border_radius=5)
+        
+        # Draw main housing
+        pygame.draw.rect(screen, BLACK, (x, y, width, height), border_radius=5)
+        
+        # Draw metallic highlight
+        highlight_width = 2
+        pygame.draw.rect(screen, (60, 60, 60),
+                        (x + (0 if vertical else highlight_width), 
+                         y + (highlight_width if vertical else 0),
+                         width - (0 if vertical else highlight_width*2),
+                         height - (highlight_width*2 if vertical else 0)),
+                        border_radius=4)
     
-    # South traffic light
-    pygame.draw.rect(screen, BLACK, (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2, 10, 60))
-    light_box = pygame.Rect(WIDTH//2 - ROAD_WIDTH//4 - 15, HEIGHT//2 + ROAD_WIDTH//2 + 50, 20, 50)
-    pygame.draw.rect(screen, BLACK, light_box)
-    pygame.draw.ellipse(screen, (100, 0, 0) if ns_light != "red" else RED,
-                       (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2 + 85, 10, 10))
-    pygame.draw.ellipse(screen, (100, 100, 0) if ns_light != "yellow" else YELLOW,
-                       (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2 + 70, 10, 10))
-    pygame.draw.ellipse(screen, (0, 100, 0) if ns_light != "green" else GREEN,
-                       (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2 + 55, 10, 10))
+    def draw_light(x, y, color, is_active):
+        """Helper function to draw a single traffic light with glow effect"""
+        light_size = 12
+        # Draw glow for active light
+        if is_active:
+            glow_size = light_size * 2
+            glow_surface = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+            for radius in range(int(light_size * 0.7), -1, -1):
+                alpha = int(100 * (radius / (light_size * 0.7)))
+                pygame.draw.circle(glow_surface, (*color, alpha), (glow_size//2, glow_size//2), radius)
+            # Center the glow precisely on the light
+            screen.blit(glow_surface, (x - glow_size//2, y - glow_size//2))
+        
+        # Draw light housing (black ring)
+        pygame.draw.circle(screen, BLACK, (x, y), light_size//2 + 1)
+        
+        # Draw the light
+        light_color = color if is_active else (color[0]//3, color[1]//3, color[2]//3)
+        pygame.draw.circle(screen, light_color, (x, y), light_size//2)
+        
+        # Add highlight reflection (slightly offset from center)
+        if is_active:
+            highlight_pos = (x - light_size//6, y - light_size//6)
+            pygame.draw.circle(screen, (255, 255, 255), highlight_pos, 2)
     
-    # East traffic light
-    pygame.draw.rect(screen, BLACK, (WIDTH//2 + ROAD_WIDTH//2, HEIGHT//2 - ROAD_WIDTH//4 - 10, 60, 10))
-    light_box = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 50, HEIGHT//2 - ROAD_WIDTH//4 - 15, 50, 20)
-    pygame.draw.rect(screen, BLACK, light_box)
-    pygame.draw.ellipse(screen, (100, 0, 0) if ew_light != "red" else RED,
-                       (WIDTH//2 + ROAD_WIDTH//2 + 85, HEIGHT//2 - ROAD_WIDTH//4 - 10, 10, 10))
-    pygame.draw.ellipse(screen, (100, 100, 0) if ew_light != "yellow" else YELLOW,
-                       (WIDTH//2 + ROAD_WIDTH//2 + 70, HEIGHT//2 - ROAD_WIDTH//4 - 10, 10, 10))
-    pygame.draw.ellipse(screen, (0, 100, 0) if ew_light != "green" else GREEN,
-                       (WIDTH//2 + ROAD_WIDTH//2 + 55, HEIGHT//2 - ROAD_WIDTH//4 - 10, 10, 10))
+    # Traffic light positions and dimensions
+    housing_width = 24
+    housing_height = 65
+    pole_width = 8
     
-    # West traffic light
-    pygame.draw.rect(screen, BLACK, (WIDTH//2 - ROAD_WIDTH//2 - 60, HEIGHT//2 + ROAD_WIDTH//4, 60, 10))
-    light_box = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 100, HEIGHT//2 + ROAD_WIDTH//4 - 5, 50, 20)
-    pygame.draw.rect(screen, BLACK, light_box)
-    pygame.draw.ellipse(screen, (100, 0, 0) if ew_light != "red" else RED,
-                       (WIDTH//2 - ROAD_WIDTH//2 - 95, HEIGHT//2 + ROAD_WIDTH//4, 10, 10))
-    pygame.draw.ellipse(screen, (100, 100, 0) if ew_light != "yellow" else YELLOW,
-                       (WIDTH//2 - ROAD_WIDTH//2 - 80, HEIGHT//2 + ROAD_WIDTH//4, 10, 10))
-    pygame.draw.ellipse(screen, (0, 100, 0) if ew_light != "green" else GREEN,
-                       (WIDTH//2 - ROAD_WIDTH//2 - 65, HEIGHT//2 + ROAD_WIDTH//4, 10, 10))
+    # North traffic light (facing south)
+    pole_x = WIDTH//2 + ROAD_WIDTH//2 + 40  # Position on the grass to the right of the road
+    pole_y = HEIGHT//2 - ROAD_WIDTH//2 - housing_height - 20  # Original height
+    pole_base_y = HEIGHT//2 - ROAD_WIDTH//2 - 20  # Move the base up by 60 pixels
+    # Draw pole from higher base position
+    pygame.draw.rect(screen, BLACK, (pole_x - pole_width//2, pole_base_y, pole_width, pole_y + housing_height - pole_base_y))
+    draw_light_housing(pole_x - housing_width//2, pole_y, housing_width, housing_height)
+    
+    center_x = pole_x
+    draw_light(center_x, pole_y + 15, RED, ns_light == "red")
+    draw_light(center_x, pole_y + 32, YELLOW, ns_light == "yellow")
+    draw_light(center_x, pole_y + 49, GREEN, ns_light == "green")
+    
+    # East traffic light (facing west)
+    pole_x = WIDTH//2 + ROAD_WIDTH//2 + 40  # Light position
+    pole_y = HEIGHT//2 + ROAD_WIDTH//2 + 40  # Position on the grass below the road
+    pole_base_x = WIDTH//2 + ROAD_WIDTH//2 + 20  # Move the base right by 60 pixels
+    # Draw pole from more rightward base position
+    pygame.draw.rect(screen, BLACK, (pole_base_x, pole_y - pole_width//2, pole_x - pole_base_x + housing_height, pole_width))
+    draw_light_housing(pole_x, pole_y - housing_width//2, housing_height, housing_width, vertical=False)
+    
+    center_y = pole_y
+    draw_light(pole_x + 15, center_y, RED, ew_light == "red")
+    draw_light(pole_x + 32, center_y, YELLOW, ew_light == "yellow")
+    draw_light(pole_x + 49, center_y, GREEN, ew_light == "green")
 
 def draw_vehicle(vehicle, debug_mode=False):
     """Draw a vehicle as a car-like shape instead of a circle"""
@@ -151,7 +239,7 @@ def draw_vehicle(vehicle, debug_mode=False):
                    (255, 0, 0)
         pygame.draw.circle(screen, sat_color, (pos[0], pos[1] - 15), vehicle.satisfaction // 2 + 1)
     
-    # Draw the vehicle
+    # Draw the vehicle with animation offset
     draw_car(pos, vehicle.color, direction, vehicle)
     
     # Draw debug info if enabled
@@ -179,134 +267,174 @@ def draw_car(pos, color, direction, vehicle):
     screen = get_screen()
     x, y = pos
     
-    # Apply animation offset
-    if direction == 'up' or direction == 'down':
+    # Apply animation offset based on direction
+    if direction == 'up':
+        y -= vehicle.animation_offset
+    elif direction == 'down':
         y += vehicle.animation_offset
-    else:
+    elif direction == 'left':
+        x -= vehicle.animation_offset
+    elif direction == 'right':
         x += vehicle.animation_offset
     
     # Car dimensions - adjusted by vehicle type
-    car_length = 20 * vehicle.size_multiplier
-    car_width = 12 * vehicle.size_multiplier
+    car_length = 24 * vehicle.size_multiplier  # Slightly larger base size
+    car_width = 14 * vehicle.size_multiplier
     
     # Adjust dimensions for horizontal vs vertical orientation
     if direction == 'left' or direction == 'right':
         car_length, car_width = car_width, car_length
     
+    # Draw shadow first (offset by 2 pixels)
+    shadow_rect = pygame.Rect(x - car_width//2 + 2, y - car_length//2 + 2, car_width, car_length)
+    pygame.draw.rect(screen, (30, 30, 30, 128), shadow_rect, border_radius=3)
+    
     # Create the rectangle for the car body
     car_rect = pygame.Rect(x - car_width//2, y - car_length//2, car_width, car_length)
     
-    # Draw the car based on direction
-    if direction == 'down':
+    # Draw the car based on direction and type
+    if direction == 'down' or direction == 'up':
         # Car body
         pygame.draw.rect(screen, color, car_rect, border_radius=3)
         
-        # Windows - different for each vehicle type
+        # Add a highlight effect on the side
+        highlight_width = 2
+        highlight_color = (min(color[0] + 50, 255), min(color[1] + 50, 255), min(color[2] + 50, 255))
+        if direction == 'down':
+            pygame.draw.rect(screen, highlight_color, 
+                           (x - car_width//2, y - car_length//2, highlight_width, car_length), border_radius=2)
+        else:
+            pygame.draw.rect(screen, highlight_color,
+                           (x + car_width//2 - highlight_width, y - car_length//2, highlight_width, car_length), border_radius=2)
+        
+        # Vehicle type specific details
         if vehicle.vehicle_type == "car":
-            # Car windows (windshield and rear window)
+            # Windshield (with gradient effect)
             window_width = car_width - 4
-            window_length = 6
-            window_rect = pygame.Rect(x - window_width//2, y - car_length//2 + 3, window_width, window_length)
-            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1)
+            window_length = 8
+            window_rect = pygame.Rect(x - window_width//2, 
+                                    y - car_length//2 + 3 if direction == 'down' else y + car_length//2 - window_length - 3,
+                                    window_width, window_length)
+            pygame.draw.rect(screen, (100, 150, 255), window_rect, border_radius=1)
+            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1, width=1)
+            
+            # Side windows
+            side_window_length = car_length // 3
+            side_window_width = 2
+            pygame.draw.rect(screen, (200, 230, 255),
+                           (x - car_width//2 - 1, y - side_window_length//2, side_window_width, side_window_length))
+            pygame.draw.rect(screen, (200, 230, 255),
+                           (x + car_width//2 - 1, y - side_window_length//2, side_window_width, side_window_length))
             
             # Rear window
-            rear_window = pygame.Rect(x - window_width//2, y + car_length//2 - 8, window_width, 5)
-            pygame.draw.rect(screen, (200, 230, 255), rear_window, border_radius=1)
+            rear_window = pygame.Rect(x - window_width//2,
+                                    y + car_length//2 - 8 if direction == 'down' else y - car_length//2 + 3,
+                                    window_width, 5)
+            pygame.draw.rect(screen, (100, 150, 255), rear_window, border_radius=1)
+            pygame.draw.rect(screen, (200, 230, 255), rear_window, border_radius=1, width=1)
             
         elif vehicle.vehicle_type == "truck":
-            # Truck cab
+            # Truck cab with metallic effect
             cab_width = car_width - 2
             cab_length = car_length // 3
             cab_rect = pygame.Rect(x - cab_width//2, y - car_length//2, cab_width, cab_length)
-            pygame.draw.rect(screen, (min(color[0] + 30, 255), min(color[1] + 30, 255), min(color[2] + 30, 255)), 
-                            cab_rect, border_radius=2)
+            cab_color = (min(color[0] + 30, 255), min(color[1] + 30, 255), min(color[2] + 30, 255))
+            pygame.draw.rect(screen, cab_color, cab_rect, border_radius=2)
             
             # Truck windshield
             window_width = cab_width - 4
             window_rect = pygame.Rect(x - window_width//2, y - car_length//2 + 2, window_width, 4)
-            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1)
+            pygame.draw.rect(screen, (100, 150, 255), window_rect, border_radius=1)
+            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1, width=1)
+            
+            # Cargo area details
+            pygame.draw.line(screen, (50, 50, 50), 
+                           (x - car_width//2 + 2, y - car_length//2 + cab_length),
+                           (x + car_width//2 - 2, y - car_length//2 + cab_length))
             
         elif vehicle.vehicle_type == "van":
-            # Van windows (larger)
+            # Van windows with larger area
             window_width = car_width - 4
             window_length = car_length // 2
             window_rect = pygame.Rect(x - window_width//2, y - car_length//2 + 3, window_width, window_length)
-            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1)
-        
-        # Wheels - all vehicle types
-        wheel_size = 3 * vehicle.size_multiplier
-        pygame.draw.rect(screen, BLACK, (x - car_width//2 - 1, y - car_length//4, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_width//2 - 2, y - car_length//4, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x - car_width//2 - 1, y + car_length//4, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_width//2 - 2, y + car_length//4, wheel_size, wheel_size))
-        
-        # Add headlights
-        headlight_size = 2 * vehicle.size_multiplier
-        pygame.draw.rect(screen, (255, 255, 200), (x - car_width//2 + 1, y - car_length//2 + 1, headlight_size, headlight_size))
-        pygame.draw.rect(screen, (255, 255, 200), (x + car_width//2 - 3, y - car_length//2 + 1, headlight_size, headlight_size))
-    
-    elif direction == 'up':
-        # Similar to down but flipped
-        pygame.draw.rect(screen, color, car_rect, border_radius=3)
-        
-        # Windows based on vehicle type
-        if vehicle.vehicle_type == "car":
-            window_width = car_width - 4
-            window_length = 6
-            window_rect = pygame.Rect(x - window_width//2, y + car_length//2 - 8, window_width, window_length)
-            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1)
+            pygame.draw.rect(screen, (100, 150, 255), window_rect, border_radius=1)
+            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1, width=1)
             
-            # Rear window
-            rear_window = pygame.Rect(x - window_width//2, y - car_length//2 + 3, window_width, 5)
-            pygame.draw.rect(screen, (200, 230, 255), rear_window, border_radius=1)
+            # Side panel lines
+            pygame.draw.line(screen, (50, 50, 50),
+                           (x - car_width//2 + 2, y),
+                           (x + car_width//2 - 2, y))
         
-        # Wheels and headlights (similar to down but positions adjusted)
-        wheel_size = 3 * vehicle.size_multiplier
-        pygame.draw.rect(screen, BLACK, (x - car_width//2 - 1, y - car_length//4, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_width//2 - 2, y - car_length//4, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x - car_width//2 - 1, y + car_length//4, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_width//2 - 2, y + car_length//4, wheel_size, wheel_size))
+        # Wheels with better detail
+        wheel_size = 4 * vehicle.size_multiplier
+        for wheel_x in [x - car_width//2 - 1, x + car_width//2 - wheel_size + 1]:
+            for wheel_y in [y - car_length//4, y + car_length//4]:
+                # Wheel shadow
+                pygame.draw.rect(screen, (20, 20, 20), 
+                               (wheel_x + 1, wheel_y + 1, wheel_size, wheel_size))
+                # Wheel
+                pygame.draw.rect(screen, BLACK,
+                               (wheel_x, wheel_y, wheel_size, wheel_size))
+                # Wheel hub
+                pygame.draw.rect(screen, (80, 80, 80),
+                               (wheel_x + 1, wheel_y + 1, wheel_size - 2, wheel_size - 2))
         
-        # Headlights at the bottom for "up" direction
-        headlight_size = 2 * vehicle.size_multiplier
-        pygame.draw.rect(screen, (255, 255, 200), (x - car_width//2 + 1, y + car_length//2 - 3, headlight_size, headlight_size))
-        pygame.draw.rect(screen, (255, 255, 200), (x + car_width//2 - 3, y + car_length//2 - 3, headlight_size, headlight_size))
+        # Headlights with glow effect
+        headlight_size = 3 * vehicle.size_multiplier
+        for headlight_x in [x - car_width//2 + 2, x + car_width//2 - headlight_size - 2]:
+            headlight_y = y - car_length//2 + 2 if direction == 'down' else y + car_length//2 - headlight_size - 2
+            # Glow
+            pygame.draw.circle(screen, (255, 255, 200, 64),
+                             (headlight_x + headlight_size//2, headlight_y + headlight_size//2),
+                             headlight_size * 1.5)
+            # Headlight
+            pygame.draw.rect(screen, (255, 255, 200),
+                           (headlight_x, headlight_y, headlight_size, headlight_size))
     
-    elif direction == 'right':
-        # Horizontal orientation
+    elif direction == 'right' or direction == 'left':
+        # Similar enhancements for horizontal orientation
         pygame.draw.rect(screen, color, car_rect, border_radius=3)
         
-        # Windows and details adjusted for horizontal
+        # Add highlight effect on top
+        highlight_height = 2
+        highlight_color = (min(color[0] + 50, 255), min(color[1] + 50, 255), min(color[2] + 50, 255))
+        pygame.draw.rect(screen, highlight_color,
+                        (x - car_length//2, y - car_width//2, car_length, highlight_height), border_radius=2)
+        
+        # Vehicle type specific details (adjusted for horizontal orientation)
         if vehicle.vehicle_type == "car":
             window_height = car_width - 4
-            window_width = 6
-            window_rect = pygame.Rect(x - car_length//2 + 3, y - window_height//2, window_width, window_height)
-            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1)
+            window_width = 8
+            window_rect = pygame.Rect(x - car_length//2 + 3 if direction == 'right' else x + car_length//2 - window_width - 3,
+                                    y - window_height//2, window_width, window_height)
+            pygame.draw.rect(screen, (100, 150, 255), window_rect, border_radius=1)
+            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1, width=1)
         
-        # Wheels adjusted for horizontal
-        wheel_size = 3 * vehicle.size_multiplier
-        pygame.draw.rect(screen, BLACK, (x - car_length//4, y - car_width//2 - 1, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x - car_length//4, y + car_width//2 - 2, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_length//4, y - car_width//2 - 1, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_length//4, y + car_width//2 - 2, wheel_size, wheel_size))
-    
-    elif direction == 'left':
-        # Horizontal orientation facing left
-        pygame.draw.rect(screen, color, car_rect, border_radius=3)
+        # Wheels for horizontal orientation
+        wheel_size = 4 * vehicle.size_multiplier
+        for wheel_y in [y - car_width//2 - 1, y + car_width//2 - wheel_size + 1]:
+            for wheel_x in [x - car_length//4, x + car_length//4]:
+                # Wheel shadow
+                pygame.draw.rect(screen, (20, 20, 20),
+                               (wheel_x + 1, wheel_y + 1, wheel_size, wheel_size))
+                # Wheel
+                pygame.draw.rect(screen, BLACK,
+                               (wheel_x, wheel_y, wheel_size, wheel_size))
+                # Wheel hub
+                pygame.draw.rect(screen, (80, 80, 80),
+                               (wheel_x + 1, wheel_y + 1, wheel_size - 2, wheel_size - 2))
         
-        # Windows and details adjusted for horizontal
-        if vehicle.vehicle_type == "car":
-            window_height = car_width - 4
-            window_width = 6
-            window_rect = pygame.Rect(x + car_length//2 - 8, y - window_height//2, window_width, window_height)
-            pygame.draw.rect(screen, (200, 230, 255), window_rect, border_radius=1)
-        
-        # Wheels adjusted for horizontal
-        wheel_size = 3 * vehicle.size_multiplier
-        pygame.draw.rect(screen, BLACK, (x - car_length//4, y - car_width//2 - 1, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x - car_length//4, y + car_width//2 - 2, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_length//4, y - car_width//2 - 1, wheel_size, wheel_size))
-        pygame.draw.rect(screen, BLACK, (x + car_length//4, y + car_width//2 - 2, wheel_size, wheel_size))
+        # Headlights for horizontal orientation
+        headlight_size = 3 * vehicle.size_multiplier
+        for headlight_y in [y - car_width//2 + 2, y + car_width//2 - headlight_size - 2]:
+            headlight_x = x - car_length//2 + 2 if direction == 'right' else x + car_length//2 - headlight_size - 2
+            # Glow
+            pygame.draw.circle(screen, (255, 255, 200, 64),
+                             (headlight_x + headlight_size//2, headlight_y + headlight_size//2),
+                             headlight_size * 1.5)
+            # Headlight
+            pygame.draw.rect(screen, (255, 255, 200),
+                           (headlight_x, headlight_y, headlight_size, headlight_size))
 
 def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current_tick, episode_length, lane_counts):
     """Draw debug information"""

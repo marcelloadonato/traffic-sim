@@ -149,10 +149,13 @@ VEHICLE_COLORS = [
 
 # Intermediate positions for smoother movement
 INTERMEDIATE_POSITIONS = {
+    # Pre-intersection positions
     'north_to_intersection': [(WIDTH//2, HEIGHT//2 - 50), (WIDTH//2, HEIGHT//2 - 30)],
     'south_to_intersection': [(WIDTH//2, HEIGHT//2 + 50), (WIDTH//2, HEIGHT//2 + 30)],
     'east_to_intersection': [(WIDTH//2 + 50, HEIGHT//2), (WIDTH//2 + 30, HEIGHT//2)],
     'west_to_intersection': [(WIDTH//2 - 50, HEIGHT//2), (WIDTH//2 - 30, HEIGHT//2)],
+    
+    # Post-intersection positions
     'intersection_to_north': [(WIDTH//2, HEIGHT//2 - 30), (WIDTH//2, HEIGHT//2 - 50)],
     'intersection_to_south': [(WIDTH//2, HEIGHT//2 + 30), (WIDTH//2, HEIGHT//2 + 50)],
     'intersection_to_east': [(WIDTH//2 + 30, HEIGHT//2), (WIDTH//2 + 50, HEIGHT//2)],

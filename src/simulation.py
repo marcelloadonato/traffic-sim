@@ -254,8 +254,8 @@ class Simulation:
                 1.0 if self.ew_light == "green" else 0.0
             ], device=DEVICE)
             
-            # Update the vehicle with the applicable light
-            vehicle.update(applicable_light)
+            # Update the vehicle with the applicable light and current FPS
+            vehicle.update(applicable_light, self.current_fps)
             
             # Check if vehicle has arrived at destination
             if vehicle.state == "arrived" or vehicle.position == vehicle.destination:

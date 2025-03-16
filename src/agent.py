@@ -12,7 +12,7 @@ class Vehicle:
         self.satisfaction = 10
         self.position_time = 0
         self.position_threshold = 30  # Time to move between positions
-        self.animation_offset = 0
+        self.animation_offset = 0  # For smooth movement animation
         self.stopped_for_collision = False
         self.vehicle_type = random.choice(["car", "truck", "van"])
         self.size_multiplier = 1.0 if self.vehicle_type == "car" else 1.5 if self.vehicle_type == "truck" else 1.2
@@ -20,12 +20,15 @@ class Vehicle:
         self.queue_position = 0  # Track position in queue
         self.log_counter = 0  # For reducing log spam
         self.waiting_time = 0  # Track continuous waiting time
+        self.base_speed = 30  # Base speed in pixels per step
         
         # Adjust timing based on vehicle type
         if self.vehicle_type == "truck":
             self.position_threshold = 80  # Trucks move slower
+            self.base_speed = 20  # Slower base speed for trucks
         elif self.vehicle_type == "van":
             self.position_threshold = 70  # Vans move a bit slower
+            self.base_speed = 25  # Slightly slower base speed for vans
         
     def _determine_route(self):
         """Determine the route from start to destination"""
@@ -33,6 +36,11 @@ class Vehicle:
         
         # Add intermediate positions for smoother movement
         if self.start_position != self.destination:
+            # Add intermediate positions before intersection
+            route_key = f'{self.start_position}_to_intersection'
+            if route_key in INTERMEDIATE_POSITIONS:
+                route.extend(INTERMEDIATE_POSITIONS[route_key])
+            
             # Add intersection
             route.append('intersection')
             
@@ -45,7 +53,7 @@ class Vehicle:
         route.append(self.destination)
         return route
     
-    def update(self, light_state):
+    def update(self, light_state, current_fps=30):
         """Update vehicle state and position"""
         self.commute_time += 1
         self.log_counter = (self.log_counter + 1) % 10  # Only log every 10 ticks
@@ -53,6 +61,7 @@ class Vehicle:
         # Check if we've reached our destination
         if self.position == self.destination:
             self.state = "arrived"
+            self.animation_offset = 0  # Reset animation offset
             if self.log_counter == 0:
                 print(f"Vehicle arrived at destination: {self.destination}")
             return
@@ -76,6 +85,7 @@ class Vehicle:
                     print(f"Vehicle stopped at red light: {self.position}")
                 self.state = "waiting"
                 self.waiting_time += 1
+                self.animation_offset = 0  # Reset animation when stopping
         
         # Stop if there's a collision ahead
         if self.check_collision_ahead():
@@ -85,18 +95,48 @@ class Vehicle:
             self.stopped_for_collision = True
             self.state = "waiting"
             self.waiting_time += 1
+            self.animation_offset = 0  # Reset animation when stopping
         
         # Update position if we're not stopping
         if not should_stop:
             self.state = "moving"
             self.stopped_for_collision = False
             self.waiting_time = 0
+            
+            # Adjust position threshold based on current position
+            base_threshold = self.position_threshold
+            if self.position == 'intersection':
+                # Move faster through intersection
+                base_threshold = self.position_threshold // 2
+            elif isinstance(self.position, tuple):
+                # Move faster through intermediate positions
+                base_threshold = self.position_threshold // 2
+            
             self.position_time += 1
             
+            # Calculate smooth animation offset with FPS scaling
+            progress = min(self.position_time / base_threshold, 1.0)
+            # Scale the animation speed based on FPS (normalize to 30 FPS)
+            fps_scale = current_fps / 30.0
+            
+            # Calculate movement speed based on position and vehicle type
+            movement_speed = self.base_speed
+            if self.position == 'intersection':
+                movement_speed *= 1.5  # Move 50% faster in intersection
+            elif isinstance(self.position, tuple):
+                movement_speed *= 1.5  # Move 50% faster through intermediate positions
+            
+            # Apply animation offset
+            if self.position in ['north', 'south']:
+                self.animation_offset = int(progress * movement_speed * fps_scale)
+            else:
+                self.animation_offset = int(progress * movement_speed * fps_scale)
+            
             # Move to next position if we've waited long enough
-            if self.position_time >= self.position_threshold:
+            if self.position_time >= base_threshold:
                 self.position = next_pos
                 self.position_time = 0
+                self.animation_offset = 0  # Reset animation when changing positions
                 
                 # Update queue position if we're in a lane
                 if self.position in ['north', 'south', 'east', 'west']:
