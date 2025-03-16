@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                            QGroupBox, QPushButton, QRadioButton, QButtonGroup,
                            QFrame, QLCDNumber, QGridLayout)
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QFont
 
 class ControlPanel(QWidget):
     # Signals for parameter changes
@@ -43,10 +44,21 @@ class ControlPanel(QWidget):
         # Connect mode changes to signal
         self.mode_group.buttonClicked.connect(self.on_mode_changed)
         
-        # Add radio buttons to layout
+        # Add radio buttons and descriptions to layout
         mode_layout.addWidget(self.rl_mode)
+        rl_desc = QLabel("AI agent learns optimal traffic light control through trial and error")
+        rl_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
+        mode_layout.addWidget(rl_desc)
+        
         mode_layout.addWidget(self.manual_mode)
+        manual_desc = QLabel("You control traffic lights manually using the SPACE bar")
+        manual_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
+        mode_layout.addWidget(manual_desc)
+        
         mode_layout.addWidget(self.tutorial_mode)
+        tutorial_desc = QLabel("Learn how the system works through guided steps")
+        tutorial_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
+        mode_layout.addWidget(tutorial_desc)
         
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
@@ -69,6 +81,10 @@ class ControlPanel(QWidget):
         speed_slider_layout.addWidget(self.speed_slider)
         speed_slider_layout.addWidget(self.speed_value_label)
         speed_layout.addLayout(speed_slider_layout)
+        
+        speed_desc = QLabel("Adjust how fast the simulation runs (1-60 frames per second)")
+        speed_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        speed_layout.addWidget(speed_desc)
         
         speed_group.setLayout(speed_layout)
         layout.addWidget(speed_group)
@@ -140,6 +156,10 @@ class ControlPanel(QWidget):
         lr_layout.addWidget(self.lr_spin)
         rl_layout.addLayout(lr_layout)
         
+        lr_desc = QLabel("How quickly the AI learns from its experiences (0.0001-0.01)")
+        lr_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        rl_layout.addWidget(lr_desc)
+        
         # Batch Size Control
         batch_layout = QHBoxLayout()
         batch_label = QLabel("Batch Size:")
@@ -150,6 +170,10 @@ class ControlPanel(QWidget):
         batch_layout.addWidget(batch_label)
         batch_layout.addWidget(self.batch_spin)
         rl_layout.addLayout(batch_layout)
+        
+        batch_desc = QLabel("Number of experiences the AI learns from at once (32-256)")
+        batch_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        rl_layout.addWidget(batch_desc)
         
         # N Steps Control
         steps_layout = QHBoxLayout()
@@ -162,6 +186,10 @@ class ControlPanel(QWidget):
         steps_layout.addWidget(self.steps_spin)
         rl_layout.addLayout(steps_layout)
         
+        steps_desc = QLabel("How often the AI updates its knowledge (512-4096 steps)")
+        steps_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        rl_layout.addWidget(steps_desc)
+        
         # Gamma Control
         gamma_layout = QHBoxLayout()
         gamma_label = QLabel("Discount Factor (Gamma):")
@@ -173,6 +201,10 @@ class ControlPanel(QWidget):
         gamma_layout.addWidget(gamma_label)
         gamma_layout.addWidget(self.gamma_spin)
         rl_layout.addLayout(gamma_layout)
+        
+        gamma_desc = QLabel("How much the AI values future rewards vs immediate rewards (0.9-0.999)")
+        gamma_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        rl_layout.addWidget(gamma_desc)
         
         # Training Steps Slider
         training_slider_layout = QHBoxLayout()
@@ -188,6 +220,10 @@ class ControlPanel(QWidget):
         training_slider_layout.addWidget(self.training_steps_slider)
         training_slider_layout.addWidget(self.training_steps_value)
         rl_layout.addLayout(training_slider_layout)
+        
+        training_desc = QLabel("Total number of steps the AI will train for (100-20000)")
+        training_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        rl_layout.addWidget(training_desc)
         
         rl_group.setLayout(rl_layout)
         layout.addWidget(rl_group)
@@ -205,6 +241,13 @@ class ControlPanel(QWidget):
         mode_layout.addWidget(mode_label)
         mode_layout.addWidget(self.mode_combo)
         traffic_layout.addLayout(mode_layout)
+        
+        traffic_desc = QLabel("Choose how vehicles are generated:\n"
+                            "• Random: Equal chance from all directions\n"
+                            "• Pattern: Predictable traffic patterns\n"
+                            "• Peak Hours: Simulated rush hour traffic")
+        traffic_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        traffic_layout.addWidget(traffic_desc)
         
         traffic_group.setLayout(traffic_layout)
         layout.addWidget(traffic_group)
