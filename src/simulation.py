@@ -1,12 +1,17 @@
 import random
 import pygame
 import numpy as np
-from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER
+import torch
+from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER, MAX_VEHICLES_PER_LANE
 from visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info, draw_speed_slider, draw_training_slider
 from vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
-from collision import check_collision
+from collision import check_collision, get_vehicle_position
 from shared import get_screen, get_clock
 from rl_agent import TrafficRLAgent
+
+# Check if CUDA is available
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {DEVICE}")
 
 """
 Traffic Simulation with Reinforcement Learning
@@ -32,6 +37,11 @@ class Simulation:
         ]
         # Manual control mode
         self.manual_mode = False
+        # Traffic generation mode
+        self.traffic_mode = "Random"  # Default mode
+        # Current simulation mode
+        self.simulation_mode = "RL"  # Default mode
+        
         # Northwest quadrant
         for _ in range(5):
             x = random.randint(50, WIDTH//2 - 100//2 - 80)
@@ -68,6 +78,14 @@ class Simulation:
             color = random.choice(BUILDING_COLORS)
             self.buildings.append((x, y, width, height, color))
         
+        # Initialize traffic counts
+        self.traffic_counts = {
+            'north': 0,
+            'south': 0,
+            'east': 0,
+            'west': 0
+        }
+        
         # Initialize simulation state
         self.reset()
         self.episode_ended = False
@@ -79,6 +97,11 @@ class Simulation:
         # Initialize RL agent
         self.rl_agent = TrafficRLAgent(self)
         self.training_in_progress = False
+        
+        # Initialize tensors for GPU acceleration
+        self.vehicle_positions = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 2), device=DEVICE)  # For all possible vehicles
+        self.vehicle_states = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 4), device=DEVICE)  # [waiting, moving, arrived, satisfaction]
+        self.light_states = torch.zeros(2, device=DEVICE)  # [ns_light, ew_light]
     
     def reset(self):
         """Reset the simulation to its initial state"""
@@ -126,11 +149,15 @@ class Simulation:
                 self.ew_light = "yellow"
                 self.ew_yellow_countdown = 30
                 self.light_change_count += 1
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_light_change()
         else:  # EW green
             if self.ns_light == "green":
                 self.ns_light = "yellow"
                 self.ns_yellow_countdown = 30
                 self.light_change_count += 1
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_light_change()
     
     def handle_events(self):
         """Handle pygame events"""
@@ -207,6 +234,8 @@ class Simulation:
                 self.ns_light = "red"
                 self.ew_light = "green"
                 self.light_change_count += 1
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_light_change()
         
         if self.ew_light == "yellow":
             self.ew_yellow_countdown -= 1
@@ -214,11 +243,21 @@ class Simulation:
                 self.ew_light = "red"
                 self.ns_light = "green"
                 self.light_change_count += 1
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_light_change()
     
     def update_vehicles(self):
-        """Update all active vehicles"""
-        for vehicle in self.active_vehicles[:]:  # Use a copy for safe iteration
-            # Set the collision detection function
+        """Update all active vehicles with GPU acceleration"""
+        # Update vehicle positions tensor
+        for i, vehicle in enumerate(self.active_vehicles):
+            if i >= MAX_VEHICLES_PER_LANE * 4:
+                break
+            pos = get_vehicle_position(vehicle)
+            self.vehicle_positions[i] = torch.tensor(pos, device=DEVICE)
+        
+        # Update vehicles in parallel where possible
+        for vehicle in self.active_vehicles[:]:
+            # Set the collision detection function with GPU acceleration
             vehicle.check_collision_ahead = lambda: check_collision(vehicle, 
                                                                   vehicle.route[vehicle.route.index(vehicle.position) + 1] 
                                                                   if vehicle.route.index(vehicle.position) < len(vehicle.route) - 1 
@@ -230,7 +269,13 @@ class Simulation:
                 applicable_light = self.ns_light
             else:  # east or west
                 applicable_light = self.ew_light
-                
+            
+            # Update light states tensor
+            self.light_states = torch.tensor([
+                1.0 if self.ns_light == "green" else 0.0,
+                1.0 if self.ew_light == "green" else 0.0
+            ], device=DEVICE)
+            
             # Update the vehicle with the applicable light
             vehicle.update(applicable_light)
             
@@ -246,6 +291,17 @@ class Simulation:
                 
                 if DEBUG_MODE:
                     print(f"Vehicle completed journey: {vehicle.start_position} -> {vehicle.destination} in {vehicle.commute_time} ticks")
+        
+        # Update traffic counts based on mode
+        if self.traffic_mode == "Pattern":
+            # Implement pattern-based traffic generation
+            pass
+        elif self.traffic_mode == "Peak Hours":
+            # Implement peak hours traffic generation
+            pass
+        else:  # Random mode
+            # Use existing random generation
+            pass
     
     def draw(self, data_recorder):
         """Draw the current simulation state"""
@@ -369,40 +425,130 @@ class Simulation:
                 self.episode_ended = True
                 print("Episode ended automatically")
     
+    def get_observation(self):
+        """Get the current observation state for the RL agent using GPU acceleration"""
+        # Update vehicle states tensor
+        for i, vehicle in enumerate(self.active_vehicles):
+            if i >= MAX_VEHICLES_PER_LANE * 4:
+                break
+            self.vehicle_states[i] = torch.tensor([
+                1.0 if vehicle.state == "waiting" else 0.0,
+                1.0 if vehicle.state == "moving" else 0.0,
+                1.0 if vehicle.state == "arrived" else 0.0,
+                vehicle.satisfaction
+            ], device=DEVICE)
+        
+        # Calculate waiting vehicles per direction using GPU
+        waiting = torch.zeros(4, device=DEVICE)  # [north, south, east, west]
+        for i, vehicle in enumerate(self.active_vehicles):
+            if i >= MAX_VEHICLES_PER_LANE * 4:
+                break
+            if vehicle.state == "waiting":
+                if vehicle.position == "north":
+                    waiting[0] += 1
+                elif vehicle.position == "south":
+                    waiting[1] += 1
+                elif vehicle.position == "east":
+                    waiting[2] += 1
+                elif vehicle.position == "west":
+                    waiting[3] += 1
+        
+        # Convert to numpy for RL agent
+        observation = waiting.cpu().numpy().astype(np.int32)
+        return observation
+    
     def step(self, data_recorder):
-        """Update simulation state"""
-        # Handle events first
+        """Update the simulation state with GPU acceleration"""
+        # Handle events
         self.handle_events()
         
-        if not self.episode_ended:
-            # Handle tutorial mode pauses
-            if self.tutorial_mode and self.current_tick % 100 == 0:
-                return  # Pause for tutorial message
-            
-            # Update simulation state
-            self.update_traffic_lights()
-            
-            # Spawn new vehicles if needed
-            spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
-            
-            # Update vehicles
-            self.update_vehicles()
-            
-            # Increment tick counter
-            self.current_tick += 1
-            
-            # Check for episode end
-            if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
-                self.episode_ended = True
-                if hasattr(self, 'data_recorder'):
-                    self.data_recorder.end_episode(self.light_change_count)
+        # Update vehicles with GPU acceleration
+        self.update_vehicles()
         
-        # Draw current state
+        # Spawn new vehicles if needed
+        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
+        
+        # Update traffic lights based on mode
+        if self.simulation_mode == "RL":
+            try:
+                # Get observation and action from RL agent
+                observation = self.get_observation()
+                action = self.rl_agent.predict(observation)
+                self.set_traffic_lights(action)
+            except Exception as e:
+                print(f"Error in RL mode: {str(e)}")
+                # Fallback to alternating pattern if RL fails
+                if self.current_tick % 100 < 50:
+                    self.set_traffic_lights(0)  # NS green
+                else:
+                    self.set_traffic_lights(1)  # EW green
+        elif self.manual_mode:
+            # Manual control is handled in handle_events
+            pass
+        else:  # Tutorial mode
+            # Tutorial mode uses simple alternating pattern
+            if self.current_tick % 100 < 50:
+                self.set_traffic_lights(0)  # NS green
+            else:
+                self.set_traffic_lights(1)  # EW green
+        
+        # Update current tick
+        self.current_tick += 1
+        
+        # Draw everything
         self.draw(data_recorder)
+        
+        # Update tutorial message if in tutorial mode
+        if self.tutorial_mode:
+            self.draw_tutorial_message()
         
         # Control simulation speed using the slider
         clock = get_clock()
         if SLOW_MODE:
             clock.tick(10)  # Slower for debugging
         else:
-            clock.tick(self.current_fps)  # Use slider-controlled speed 
+            clock.tick(self.current_fps)  # Use slider-controlled speed
+    
+    def set_traffic_mode(self, mode):
+        """Set the traffic generation mode"""
+        self.traffic_mode = mode
+        # Reset traffic counts when mode changes
+        self.traffic_counts = {direction: 0 for direction in self.traffic_counts}
+        
+    def get_traffic_counts(self):
+        """Get current traffic counts by direction"""
+        # Update counts based on waiting vehicles
+        waiting = self.get_waiting_vehicles()
+        self.traffic_counts = {
+            'north': waiting[0],
+            'south': waiting[1],
+            'east': waiting[2],
+            'west': waiting[3]
+        }
+        return self.traffic_counts
+    
+    def set_mode(self, mode):
+        """Set the simulation mode (RL, Manual, or Tutorial)"""
+        self.simulation_mode = mode
+        self.tutorial_mode = (mode == "Tutorial")
+        self.manual_mode = (mode == "Manual")
+        
+        # Reset tutorial step when entering tutorial mode
+        if self.tutorial_mode:
+            self.tutorial_step = 0
+            
+    def draw_tutorial_message(self):
+        """Draw the current tutorial message"""
+        if self.tutorial_step < len(self.tutorial_messages):
+            message = self.tutorial_messages[self.tutorial_step]
+            font = pygame.font.Font(None, 36)
+            text = font.render(message, True, WHITE)
+            text_rect = text.get_rect(center=(WIDTH//2, HEIGHT - 50))
+            get_screen().blit(text, text_rect)
+            
+            # Draw instruction
+            instruction = "Press SPACE to continue"
+            instruction_font = pygame.font.Font(None, 24)
+            instruction_text = instruction_font.render(instruction, True, WHITE)
+            instruction_rect = instruction_text.get_rect(center=(WIDTH//2, HEIGHT - 20))
+            get_screen().blit(instruction_text, instruction_rect) 

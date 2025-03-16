@@ -2,28 +2,38 @@ import random
 from config import TOTAL_VEHICLES, EPISODE_LENGTH, MAX_VEHICLES_PER_LANE, VEHICLE_COLORS
 from agent import Vehicle
 
-def generate_vehicle_spawn_schedule(total_vehicles=TOTAL_VEHICLES, max_ticks=EPISODE_LENGTH):
+DETERMINISTIC_SPAWNING = True  # or True for fixed patterns
+
+def generate_vehicle_spawn_schedule(total_vehicles=TOTAL_VEHICLES, max_ticks=EPISODE_LENGTH, deterministic=False):
     """Generate a spawn schedule for vehicles with different start and end points"""
     schedule = []
-    
-    # All possible combinations of start and destination
     directions = ['north', 'south', 'east', 'west']
     
+    if deterministic:
+        # Set random seed to ensure same sequence
+        random.seed(42)  # or any fixed number
+    
     for i in range(total_vehicles):
-        # Pick random spawn tick
-        spawn_tick = random.randint(0, max_ticks // 2)
+        # Pick spawn tick - if deterministic, use fixed pattern
+        if deterministic:
+            spawn_tick = (i * (max_ticks // 2) // total_vehicles)  # Evenly spread spawns
+        else:
+            spawn_tick = random.randint(0, max_ticks // 2)
         
-        # Pick random start and destination (must be different)
+        # Pick start and destination (must be different)
         start = random.choice(directions)
         destination = random.choice([d for d in directions if d != start])
         
-        # Add to schedule
         schedule.append({
             'spawn_tick': spawn_tick,
             'start': start,
             'destination': destination
         })
     
+    if deterministic:
+        # Reset random seed
+        random.seed()
+        
     # Sort by spawn tick
     schedule.sort(key=lambda x: x['spawn_tick'])
     return schedule

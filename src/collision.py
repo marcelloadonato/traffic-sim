@@ -1,5 +1,7 @@
 import math
+import torch
 from config import WIDTH, HEIGHT, ROAD_WIDTH, LANES
+from shared import DEVICE
 
 def get_vehicle_position(vehicle):
     """Get the position coordinates for a vehicle based on its position value and progress"""
@@ -121,7 +123,7 @@ def get_vehicle_direction(vehicle):
     return 'right'  # Default direction
 
 def check_collision(vehicle, next_position, active_vehicles):
-    """Check if moving to next_position would cause a collision with another vehicle"""
+    """Check if moving to next_position would cause a collision with another vehicle using GPU acceleration"""
     # Get the actual coordinates for the next position
     next_pos_coords = None
     
@@ -145,9 +147,12 @@ def check_collision(vehicle, next_position, active_vehicles):
     # Get current vehicle's position coordinates
     current_pos_coords = get_vehicle_position(vehicle)
     
-    # Check distance to all other vehicles
-    min_distance = 25  # Minimum distance between vehicles
+    # Convert positions to tensors for GPU acceleration
+    next_pos_tensor = torch.tensor(next_pos_coords, device=DEVICE)
+    current_pos_tensor = torch.tensor(current_pos_coords, device=DEVICE)
     
+    # Create tensors for all other vehicle positions
+    other_positions = []
     for other in active_vehicles:
         if other == vehicle:
             continue  # Skip self
@@ -156,22 +161,34 @@ def check_collision(vehicle, next_position, active_vehicles):
         if other.position != next_position and other.position != vehicle.position:
             continue
             
-        # Get other vehicle's position
         other_pos = get_vehicle_position(other)
-        
-        # Calculate distance
-        distance = math.sqrt((next_pos_coords[0] - other_pos[0])**2 + (next_pos_coords[1] - other_pos[1])**2)
-        
-        # Check if too close
-        if distance < min_distance:
-            # Only count as collision if the other vehicle is ahead of us in our direction of travel
-            if vehicle.start_position == 'north' and other_pos[1] < current_pos_coords[1]:
-                return True
-            elif vehicle.start_position == 'south' and other_pos[1] > current_pos_coords[1]:
-                return True
-            elif vehicle.start_position == 'east' and other_pos[0] > current_pos_coords[0]:
-                return True
-            elif vehicle.start_position == 'west' and other_pos[0] < current_pos_coords[0]:
-                return True
+        other_positions.append(other_pos)
+    
+    if not other_positions:
+        return False
+    
+    # Convert other positions to tensor
+    other_pos_tensor = torch.tensor(other_positions, device=DEVICE)
+    
+    # Calculate distances using GPU
+    distances = torch.sqrt(torch.sum((next_pos_tensor - other_pos_tensor) ** 2, dim=1))
+    
+    # Check for collisions (distance < min_distance)
+    min_distance = 25
+    collision_mask = distances < min_distance
+    
+    # Check if any collisions are ahead of us in our direction of travel
+    if torch.any(collision_mask):
+        for i, is_collision in enumerate(collision_mask):
+            if is_collision:
+                other_pos = other_positions[i]
+                if vehicle.start_position == 'north' and other_pos[1] < current_pos_coords[1]:
+                    return True
+                elif vehicle.start_position == 'south' and other_pos[1] > current_pos_coords[1]:
+                    return True
+                elif vehicle.start_position == 'east' and other_pos[0] > current_pos_coords[0]:
+                    return True
+                elif vehicle.start_position == 'west' and other_pos[0] < current_pos_coords[0]:
+                    return True
     
     return False  # No collision 

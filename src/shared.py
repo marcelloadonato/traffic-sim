@@ -1,4 +1,32 @@
 import pygame
+import torch
+
+# Check if CUDA is available
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {DEVICE}")
+
+# Initialize Pygame screen and clock
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("Traffic Simulation")
+clock = pygame.time.Clock()
+
+def get_screen():
+    """Get the Pygame screen"""
+    return screen
+
+def get_clock():
+    """Get the Pygame clock"""
+    return clock
+
+def to_tensor(data, dtype=torch.float32):
+    """Convert data to a tensor on the appropriate device"""
+    if isinstance(data, (list, tuple)):
+        return torch.tensor(data, dtype=dtype, device=DEVICE)
+    return torch.tensor([data], dtype=dtype, device=DEVICE)
+
+def to_numpy(tensor):
+    """Convert a tensor to numpy array"""
+    return tensor.cpu().numpy()
 
 class PygameContext:
     """Class to manage shared Pygame resources"""
