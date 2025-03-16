@@ -394,4 +394,37 @@ def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current
                 pygame.draw.circle(screen, DEBUG_COLORS['queue_pos'], pos, 3)
         
         # Draw intersection center marker
-        pygame.draw.circle(screen, DEBUG_COLORS['intersection'], (WIDTH//2, HEIGHT//2), 8, width=2) 
+        pygame.draw.circle(screen, DEBUG_COLORS['intersection'], (WIDTH//2, HEIGHT//2), 8, width=2)
+
+def draw_speed_slider(current_fps):
+    """Draw the speed control slider"""
+    screen = get_screen()
+    s = SPEED_SLIDER  # For shorter reference
+    
+    # Draw slider background
+    pygame.draw.rect(screen, s['background'], 
+                    (s['x'], s['y'], s['width'], s['height']), 
+                    border_radius=s['height']//2)
+    
+    # Calculate handle position
+    fps_range = s['max_fps'] - s['min_fps']
+    handle_x = s['x'] + (current_fps - s['min_fps']) / fps_range * s['width']
+    handle_y = s['y'] + s['height']//2
+    
+    # Draw handle
+    mouse_pos = pygame.mouse.get_pos()
+    handle_rect = pygame.Rect(handle_x - s['handle_radius'], 
+                            handle_y - s['handle_radius'],
+                            s['handle_radius']*2, 
+                            s['handle_radius']*2)
+    
+    # Change handle color if mouse is over it
+    handle_color = s['active_handle'] if handle_rect.collidepoint(mouse_pos) else s['handle']
+    pygame.draw.circle(screen, handle_color, (int(handle_x), int(handle_y)), s['handle_radius'])
+    
+    # Draw speed label
+    font = pygame.font.SysFont('Arial', 14)
+    text = font.render(f"Simulation Speed: {int(current_fps)} FPS", True, s['label_color'])
+    screen.blit(text, (s['x'], s['y'] - 20))
+    
+    return handle_rect  # Return the handle rect for click detection 

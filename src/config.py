@@ -6,6 +6,22 @@ HEIGHT = 800  # Increased from previous size
 FPS = 30
 SLOW_FPS = 10
 
+# Speed slider settings
+SPEED_SLIDER = {
+    'x': 10,
+    'y': HEIGHT - 40,
+    'width': 200,
+    'height': 10,
+    'min_fps': 5,
+    'max_fps': 60,
+    'default_fps': 30,
+    'handle_radius': 8,
+    'background': (200, 200, 200),
+    'handle': (100, 100, 100),
+    'active_handle': (50, 50, 50),
+    'label_color': (0, 0, 0)
+}
+
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)

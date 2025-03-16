@@ -1,7 +1,7 @@
 import random
 import pygame
-from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES
-from visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info
+from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER
+from visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info, draw_speed_slider
 from vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
 from collision import check_collision
 from shared import get_screen, get_clock
@@ -49,6 +49,8 @@ class Simulation:
         # Initialize simulation state
         self.reset()
         self.episode_ended = False  # New flag to track episode state
+        self.current_fps = SPEED_SLIDER['default_fps']  # Add current FPS tracking
+        self.slider_dragging = False  # Track if slider is being dragged
     
     def reset(self):
         """Reset the simulation to its initial state"""
@@ -69,10 +71,28 @@ class Simulation:
     
     def handle_events(self):
         """Handle pygame events"""
+        mouse_pos = pygame.mouse.get_pos()
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-            if event.type == pygame.KEYDOWN:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click
+                    # Check if clicked on slider handle
+                    if hasattr(self, 'slider_handle_rect') and self.slider_handle_rect.collidepoint(mouse_pos):
+                        self.slider_dragging = True
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:  # Left click release
+                    self.slider_dragging = False
+            elif event.type == pygame.MOUSEMOTION:
+                if self.slider_dragging:
+                    # Update FPS based on slider position
+                    rel_x = mouse_pos[0] - SPEED_SLIDER['x']
+                    fps_range = SPEED_SLIDER['max_fps'] - SPEED_SLIDER['min_fps']
+                    self.current_fps = max(SPEED_SLIDER['min_fps'],
+                                        min(SPEED_SLIDER['max_fps'],
+                                            SPEED_SLIDER['min_fps'] + (rel_x / SPEED_SLIDER['width']) * fps_range))
+            elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     # Toggle lights
                     if self.ns_light == "green" and self.ew_light == "red":
@@ -209,6 +229,9 @@ class Simulation:
             text_rect = text.get_rect(center=(WIDTH//2, HEIGHT//2))
             screen.blit(text, text_rect)
         
+        # Draw the speed slider and store its handle rect
+        self.slider_handle_rect = draw_speed_slider(self.current_fps)
+        
         pygame.display.flip()
     
     def step(self, data_recorder):
@@ -238,9 +261,9 @@ class Simulation:
         # Draw everything
         self.draw(data_recorder)
         
-        # Control simulation speed
+        # Control simulation speed using the slider
         clock = get_clock()
         if SLOW_MODE:
             clock.tick(10)  # Slower for debugging
         else:
-            clock.tick(30)  # Normal speed 
+            clock.tick(self.current_fps)  # Use slider-controlled speed 

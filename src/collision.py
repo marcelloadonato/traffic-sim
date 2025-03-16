@@ -13,12 +13,23 @@ def get_vehicle_position(vehicle):
         queue_positions = LANES[vehicle.position]['queue']
         progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
         
+        # If vehicle is waiting at the light, pull up to the intersection
+        if vehicle.state == "waiting" and vehicle.position_time >= vehicle.position_threshold:
+            return LANES[vehicle.position]['in']
+        
         # Calculate position along the queue
         if progress < 0.5:  # First half of movement - use queue positions
             queue_idx = min(int(progress * 8), len(queue_positions) - 1)
             return queue_positions[queue_idx]
         else:  # Second half - approach the intersection entrance
-            return LANES[vehicle.position]['in']
+            # Interpolate between last queue position and intersection entrance
+            last_queue = queue_positions[-1]
+            intersection = LANES[vehicle.position]['in']
+            t = (progress - 0.5) * 2  # Scale 0.5-1.0 to 0-1
+            return (
+                last_queue[0] + (intersection[0] - last_queue[0]) * t,
+                last_queue[1] + (intersection[1] - last_queue[1]) * t
+            )
     
     # If at the intersection
     elif vehicle.position == 'intersection':
