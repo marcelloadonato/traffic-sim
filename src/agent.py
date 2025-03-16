@@ -115,20 +115,13 @@ class Vehicle:
     
     def _should_stop_at_red(self):
         """Determine if this vehicle should stop at a red light based on its route."""
-        # North-South gets a green light when light_state is "green"
-        # East-West gets a green light when light_state is "red"
-        if self.position == "intersection":
-            if self.start_position in ["north", "south"] and self.destination in ["north", "south"]:
-                return True  # Stop at red when going north-south
-            elif self.start_position in ["east", "west"] and self.destination in ["east", "west"]:
-                return False  # East-west can go on red (for them it's green)
-            else:
-                # Turning traffic
-                if self.start_position in ["north", "south"]:
-                    return True  # Turning from north/south stops on red
-                else:
-                    return False  # Turning from east/west can go on red
-        return False
+        if self.position in ['north', 'south']:
+            # North-South traffic should stop on red light
+            return True
+        elif self.position in ['east', 'west']:
+            # East-West traffic should stop on red light
+            return True
+        return False  # Default case (e.g., in intersection already)
     
     def at_intersection(self):
         """Check if vehicle is at the intersection."""

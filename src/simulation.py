@@ -1,6 +1,6 @@
 import random
 import pygame
-from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, LANES
+from config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES
 from visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info
 from vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
 from collision import check_collision
@@ -48,6 +48,7 @@ class Simulation:
         
         # Initialize simulation state
         self.reset()
+        self.episode_ended = False  # New flag to track episode state
     
     def reset(self):
         """Reset the simulation to its initial state"""
@@ -60,6 +61,11 @@ class Simulation:
         self.ew_yellow_countdown = 0
         self.current_tick = 0
         self.running = True
+        self.episode_ended = False
+        
+    def set_data_recorder(self, data_recorder):
+        """Set the data recorder for the simulation"""
+        self.data_recorder = data_recorder
     
     def handle_events(self):
         """Handle pygame events"""
@@ -83,6 +89,14 @@ class Simulation:
                     global SLOW_MODE
                     SLOW_MODE = not SLOW_MODE
                     print(f"Slow mode: {'ON' if SLOW_MODE else 'OFF'}")
+                elif event.key == pygame.K_e:  # End episode
+                    if not self.episode_ended:
+                        self.episode_ended = True
+                        print("Episode ended manually")
+                elif event.key == pygame.K_n:  # Start new episode
+                    if self.episode_ended:
+                        self.reset()
+                        print("Starting new episode")
     
     def update_traffic_lights(self):
         """Update traffic light states"""
@@ -119,6 +133,10 @@ class Simulation:
             
             # Check if vehicle has arrived at destination
             if vehicle.state == "arrived" or vehicle.position == vehicle.destination:
+                # Record completion data before removing
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_vehicle_completion(vehicle)
+                
                 # Remove from active and add to removed
                 self.removed_vehicles.append(vehicle)
                 self.active_vehicles.remove(vehicle)
@@ -184,18 +202,38 @@ class Simulation:
             draw_debug_info(self.ns_light, self.ew_light, self.active_vehicles, 
                           self.spawn_schedule, self.current_tick, EPISODE_LENGTH, lane_counts)
         
+        # Draw episode state message
+        if self.episode_ended:
+            font = pygame.font.SysFont('Arial', 24)
+            text = font.render("Episode Ended - Press N to start new episode", True, BLACK)
+            text_rect = text.get_rect(center=(WIDTH//2, HEIGHT//2))
+            screen.blit(text, text_rect)
+        
         pygame.display.flip()
     
     def step(self, data_recorder):
         """Perform one step of the simulation"""
         self.handle_events()
-        self.update_traffic_lights()
         
-        # Spawn new vehicles if needed
-        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
-        
-        # Update vehicles
-        self.update_vehicles()
+        if not self.episode_ended:
+            self.update_traffic_lights()
+            
+            # Spawn new vehicles if needed
+            spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
+            
+            # Update vehicles
+            self.update_vehicles()
+            
+            # Increment tick counter
+            self.current_tick += 1
+            
+            # Check if episode should end
+            if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
+                # End episode
+                data_recorder.end_episode()
+                data_recorder.plot_learning_curve()
+                self.episode_ended = True
+                print("Episode ended automatically")
         
         # Draw everything
         self.draw(data_recorder)
@@ -205,16 +243,4 @@ class Simulation:
         if SLOW_MODE:
             clock.tick(10)  # Slower for debugging
         else:
-            clock.tick(30)  # Normal speed
-        
-        # Increment tick counter
-        self.current_tick += 1
-        
-        # Check if episode should end
-        if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
-            # End episode
-            data_recorder.end_episode()
-            data_recorder.plot_learning_curve()
-            
-            # Reset for next episode
-            self.reset() 
+            clock.tick(30)  # Normal speed 

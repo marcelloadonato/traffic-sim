@@ -65,21 +65,49 @@ def get_vehicle_position(vehicle):
     return (WIDTH//2, HEIGHT//2)
 
 def get_vehicle_direction(vehicle):
-    """Determine the direction the vehicle should face based on start and destination"""
-    if vehicle.position in LANES:
-        return LANES[vehicle.position]['direction']
-    elif vehicle.position == 'intersection':
-        # When in intersection, use the destination to determine direction
-        if vehicle.destination == 'north':
-            return 'up'
-        elif vehicle.destination == 'south':
+    """Determine the direction a vehicle should face based on its current position and next position"""
+    # If at a cardinal direction (north, south, east, west), determine direction based on destination
+    if vehicle.position in ['north', 'south', 'east', 'west']:
+        if vehicle.position == 'north':
             return 'down'
-        elif vehicle.destination == 'east':
-            return 'right'
-        else:  # west
+        elif vehicle.position == 'south':
+            return 'up'
+        elif vehicle.position == 'east':
             return 'left'
-    else:
-        return 'down'  # Default
+        elif vehicle.position == 'west':
+            return 'right'
+    
+    # If in the intersection or moving between positions, determine direction based on current and next position
+    current_idx = vehicle.route.index(vehicle.position)
+    if current_idx < len(vehicle.route) - 1:
+        next_pos = vehicle.route[current_idx + 1]
+        
+        # If next position is a tuple, compare coordinates
+        if isinstance(vehicle.position, tuple) and isinstance(next_pos, tuple):
+            curr_x, curr_y = vehicle.position
+            next_x, next_y = next_pos
+            
+            if next_x > curr_x:
+                return 'right'
+            elif next_x < curr_x:
+                return 'left'
+            elif next_y > curr_y:
+                return 'down'
+            else:
+                return 'up'
+        
+        # If next position is a cardinal direction, determine based on that
+        if next_pos == 'north':
+            return 'up'
+        elif next_pos == 'south':
+            return 'down'
+        elif next_pos == 'east':
+            return 'right'
+        elif next_pos == 'west':
+            return 'left'
+    
+    # Default to current direction if can't determine
+    return 'right'  # Default direction
 
 def check_collision(vehicle, next_position, active_vehicles):
     """Check if moving to next_position would cause a collision with another vehicle"""

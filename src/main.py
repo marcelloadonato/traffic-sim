@@ -13,6 +13,9 @@ def main():
     simulation = Simulation()
     data_recorder = DataRecorder()
     
+    # Connect data recorder to simulation
+    simulation.set_data_recorder(data_recorder)
+    
     # Main game loop
     while simulation.running:
         simulation.step(data_recorder)

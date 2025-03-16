@@ -8,8 +8,11 @@ def draw_buildings(buildings):
     """Draw buildings in the city"""
     screen = get_screen()
     for x, y, width, height, color in buildings:
+        # Ensure color values are valid integers
+        building_color = tuple(max(0, min(255, int(c))) for c in color)
+        
         # Building body
-        pygame.draw.rect(screen, color, (x, y, width, height))
+        pygame.draw.rect(screen, building_color, (x, y, width, height))
         
         # Windows
         window_size = 8
@@ -22,14 +25,15 @@ def draw_buildings(buildings):
         
         # Roof
         roof_height = random.randint(5, 15)
+        # Calculate roof color by darkening the building color
+        roof_color = tuple(max(0, min(255, int(c - 30))) for c in building_color)
+        
         if random.random() > 0.5:  # 50% chance for a different roof style
             # Flat roof with edge
-            pygame.draw.rect(screen, (min(color[0] - 30, 255), min(color[1] - 30, 255), min(color[2] - 30, 255)), 
-                            (x, y - roof_height, width, roof_height))
+            pygame.draw.rect(screen, roof_color, (x, y - roof_height, width, roof_height))
         else:
             # Pitched roof
-            pygame.draw.polygon(screen, (min(color[0] - 30, 255), min(color[1] - 30, 255), min(color[2] - 30, 255)),
-                              [(x, y), (x + width, y), (x + width//2, y - roof_height)])
+            pygame.draw.polygon(screen, roof_color, [(x, y), (x + width, y), (x + width//2, y - roof_height)])
 
 def draw_road():
     """Draw the road with lanes and markings"""
@@ -79,47 +83,55 @@ def draw_road():
         pygame.draw.rect(screen, WHITE, (WIDTH//2 - ROAD_WIDTH//2 - 20, y, 20, crosswalk_width))
 
 def draw_traffic_lights(ns_light, ew_light):
-    """Draw two traffic lights - one for NS and one for EW"""
+    """Draw traffic lights on all four sides of the intersection"""
     screen = get_screen()
-    # North-South traffic light (right side of intersection)
+    
+    # North traffic light
     # Traffic light pole
-    pygame.draw.rect(screen, BLACK, (WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 60, 10, 60))
-    
+    pygame.draw.rect(screen, BLACK, (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 60, 10, 60))
     # Traffic light housing
-    light_box = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 5, HEIGHT//2 - ROAD_WIDTH//2 - 100, 20, 50)
+    light_box = pygame.Rect(WIDTH//2 + ROAD_WIDTH//4 - 5, HEIGHT//2 - ROAD_WIDTH//2 - 100, 20, 50)
     pygame.draw.rect(screen, BLACK, light_box)
+    # Lights
+    pygame.draw.ellipse(screen, (100, 0, 0) if ns_light != "red" else RED, 
+                       (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 95, 10, 10))  # Red
+    pygame.draw.ellipse(screen, (100, 100, 0) if ns_light != "yellow" else YELLOW,
+                       (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 80, 10, 10))  # Yellow
+    pygame.draw.ellipse(screen, (0, 100, 0) if ns_light != "green" else GREEN,
+                       (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//2 - 65, 10, 10))  # Green
     
-    # Red light
-    red_light = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 95, 10, 10)
-    pygame.draw.ellipse(screen, (100, 0, 0) if ns_light != "red" else RED, red_light)
-    
-    # Yellow light
-    yellow_light = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 80, 10, 10)
-    pygame.draw.ellipse(screen, (100, 100, 0) if ns_light != "yellow" else YELLOW, yellow_light)
-    
-    # Green light
-    green_light = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 10, HEIGHT//2 - ROAD_WIDTH//2 - 65, 10, 10)
-    pygame.draw.ellipse(screen, (0, 100, 0) if ns_light != "green" else GREEN, green_light)
-    
-    # East-West traffic light (bottom side of intersection)
-    # Traffic light pole
-    pygame.draw.rect(screen, BLACK, (WIDTH//2 - ROAD_WIDTH//2 - 60, HEIGHT//2 + ROAD_WIDTH//2 + 10, 60, 10))
-    
-    # Traffic light housing
-    light_box = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 100, HEIGHT//2 + ROAD_WIDTH//2 + 5, 50, 20)
+    # South traffic light
+    pygame.draw.rect(screen, BLACK, (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2, 10, 60))
+    light_box = pygame.Rect(WIDTH//2 - ROAD_WIDTH//4 - 15, HEIGHT//2 + ROAD_WIDTH//2 + 50, 20, 50)
     pygame.draw.rect(screen, BLACK, light_box)
+    pygame.draw.ellipse(screen, (100, 0, 0) if ns_light != "red" else RED,
+                       (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2 + 85, 10, 10))
+    pygame.draw.ellipse(screen, (100, 100, 0) if ns_light != "yellow" else YELLOW,
+                       (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2 + 70, 10, 10))
+    pygame.draw.ellipse(screen, (0, 100, 0) if ns_light != "green" else GREEN,
+                       (WIDTH//2 - ROAD_WIDTH//4 - 10, HEIGHT//2 + ROAD_WIDTH//2 + 55, 10, 10))
     
-    # Red light
-    red_light = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 95, HEIGHT//2 + ROAD_WIDTH//2 + 10, 10, 10)
-    pygame.draw.ellipse(screen, (100, 0, 0) if ew_light != "red" else RED, red_light)
+    # East traffic light
+    pygame.draw.rect(screen, BLACK, (WIDTH//2 + ROAD_WIDTH//2, HEIGHT//2 - ROAD_WIDTH//4 - 10, 60, 10))
+    light_box = pygame.Rect(WIDTH//2 + ROAD_WIDTH//2 + 50, HEIGHT//2 - ROAD_WIDTH//4 - 15, 50, 20)
+    pygame.draw.rect(screen, BLACK, light_box)
+    pygame.draw.ellipse(screen, (100, 0, 0) if ew_light != "red" else RED,
+                       (WIDTH//2 + ROAD_WIDTH//2 + 85, HEIGHT//2 - ROAD_WIDTH//4 - 10, 10, 10))
+    pygame.draw.ellipse(screen, (100, 100, 0) if ew_light != "yellow" else YELLOW,
+                       (WIDTH//2 + ROAD_WIDTH//2 + 70, HEIGHT//2 - ROAD_WIDTH//4 - 10, 10, 10))
+    pygame.draw.ellipse(screen, (0, 100, 0) if ew_light != "green" else GREEN,
+                       (WIDTH//2 + ROAD_WIDTH//2 + 55, HEIGHT//2 - ROAD_WIDTH//4 - 10, 10, 10))
     
-    # Yellow light
-    yellow_light = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 80, HEIGHT//2 + ROAD_WIDTH//2 + 10, 10, 10)
-    pygame.draw.ellipse(screen, (100, 100, 0) if ew_light != "yellow" else YELLOW, yellow_light)
-    
-    # Green light
-    green_light = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 65, HEIGHT//2 + ROAD_WIDTH//2 + 10, 10, 10)
-    pygame.draw.ellipse(screen, (0, 100, 0) if ew_light != "green" else GREEN, green_light)
+    # West traffic light
+    pygame.draw.rect(screen, BLACK, (WIDTH//2 - ROAD_WIDTH//2 - 60, HEIGHT//2 + ROAD_WIDTH//4, 60, 10))
+    light_box = pygame.Rect(WIDTH//2 - ROAD_WIDTH//2 - 100, HEIGHT//2 + ROAD_WIDTH//4 - 5, 50, 20)
+    pygame.draw.rect(screen, BLACK, light_box)
+    pygame.draw.ellipse(screen, (100, 0, 0) if ew_light != "red" else RED,
+                       (WIDTH//2 - ROAD_WIDTH//2 - 95, HEIGHT//2 + ROAD_WIDTH//4, 10, 10))
+    pygame.draw.ellipse(screen, (100, 100, 0) if ew_light != "yellow" else YELLOW,
+                       (WIDTH//2 - ROAD_WIDTH//2 - 80, HEIGHT//2 + ROAD_WIDTH//4, 10, 10))
+    pygame.draw.ellipse(screen, (0, 100, 0) if ew_light != "green" else GREEN,
+                       (WIDTH//2 - ROAD_WIDTH//2 - 65, HEIGHT//2 + ROAD_WIDTH//4, 10, 10))
 
 def draw_vehicle(vehicle, debug_mode=False):
     """Draw a vehicle as a car-like shape instead of a circle"""
@@ -149,16 +161,18 @@ def draw_vehicle(vehicle, debug_mode=False):
             next_pos = vehicle.route[vehicle.route.index(vehicle.position) + 1]
             if next_pos in LANES:
                 end_pos = LANES[next_pos]['in']
-                pygame.draw.line(screen, vehicle.color, pos, end_pos, 1)
+                pygame.draw.line(screen, DEBUG_COLORS['route_preview'], pos, end_pos, 2)
         
         # Draw vehicle ID and state
-        font = pygame.font.SysFont('Arial', 10)
+        font = pygame.font.SysFont('Arial', FONT_SIZE['vehicle_id'])
         id_text = font.render(f"{id(vehicle) % 1000}", True, BLACK)
-        screen.blit(id_text, (pos[0] - 10, pos[1] - 20))
+        state_text = font.render(f"{vehicle.state}", True, BLACK)
+        screen.blit(id_text, (pos[0] - 10, pos[1] - 25))
+        screen.blit(state_text, (pos[0] - 15, pos[1] - 15))
         
         # Draw collision detection area
         if vehicle.stopped_for_collision:
-            pygame.draw.circle(screen, (255, 0, 0, 128), pos, 25, width=1)
+            pygame.draw.circle(screen, DEBUG_COLORS['collision_area'], pos, 25, width=1)
 
 def draw_car(pos, color, direction, vehicle):
     """Draw a car-like shape at the given position with the given color and direction"""
@@ -298,7 +312,7 @@ def draw_stats(waiting_count, moving_count, arrived_count, avg_satisfaction, cur
     """Draw simulation statistics"""
     screen = get_screen()
     # Create font
-    font = pygame.font.SysFont('Arial', 16)
+    font = pygame.font.SysFont('Arial', FONT_SIZE['stats'])
     
     # Render stats
     stats_text = [
@@ -311,20 +325,28 @@ def draw_stats(waiting_count, moving_count, arrived_count, avg_satisfaction, cur
     ]
     
     # Draw stats background
-    pygame.draw.rect(screen, (240, 240, 240, 200), (5, 5, 200, 110), border_radius=5)
-    pygame.draw.rect(screen, BLACK, (5, 5, 200, 110), width=1, border_radius=5)
+    pygame.draw.rect(screen, STATS_PANEL['background'], 
+                    (STATS_PANEL['padding'], STATS_PANEL['padding'], 
+                     STATS_PANEL['width'], STATS_PANEL['height']), 
+                    border_radius=5)
+    pygame.draw.rect(screen, STATS_PANEL['border'], 
+                    (STATS_PANEL['padding'], STATS_PANEL['padding'], 
+                     STATS_PANEL['width'], STATS_PANEL['height']), 
+                    width=1, border_radius=5)
     
     # Draw stats
     for i, text in enumerate(stats_text):
         text_surface = font.render(text, True, BLACK)
-        screen.blit(text_surface, (10, 10 + i * 18))
+        screen.blit(text_surface, (STATS_PANEL['padding'] + 5, STATS_PANEL['padding'] + 5 + i * 20))
     
     return waiting_count, moving_count, arrived_count, avg_satisfaction
 
 def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current_tick, episode_length, lane_counts):
     """Draw debug information"""
     screen = get_screen()
-    font = pygame.font.SysFont('Arial', 14)
+    font = pygame.font.SysFont('Arial', FONT_SIZE['debug'])
+    
+    # Prepare debug text
     debug_text = [
         f"NS Light: {ns_light}",
         f"EW Light: {ew_light}",
@@ -332,19 +354,44 @@ def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current
         f"Vehicles to spawn: {len(spawn_schedule)}",
         f"Tick: {current_tick}/{episode_length}",
         f"Press D to toggle debug mode",
-        f"Press S to toggle slow mode"
+        f"Press S to toggle slow mode",
+        f"Press E to end episode",
+        f"Press N for new episode"
     ]
     
-    # Draw a background for debug text
-    pygame.draw.rect(screen, (240, 240, 240, 200), (WIDTH - 210, 5, 205, 120), border_radius=5)
-    pygame.draw.rect(screen, BLACK, (WIDTH - 210, 5, 205, 120), width=1, border_radius=5)
+    # Draw debug panel background
+    panel_x = WIDTH - DEBUG_PANEL['width'] - DEBUG_PANEL['padding']
+    pygame.draw.rect(screen, DEBUG_PANEL['background'], 
+                    (panel_x, DEBUG_PANEL['padding'], 
+                     DEBUG_PANEL['width'], DEBUG_PANEL['height']), 
+                    border_radius=5)
+    pygame.draw.rect(screen, DEBUG_PANEL['border'], 
+                    (panel_x, DEBUG_PANEL['padding'], 
+                     DEBUG_PANEL['width'], DEBUG_PANEL['height']), 
+                    width=1, border_radius=5)
     
+    # Draw debug text
     for i, text in enumerate(debug_text):
         text_surface = font.render(text, True, BLACK)
-        screen.blit(text_surface, (WIDTH - 200, 10 + i * 20))
+        screen.blit(text_surface, (panel_x + 10, DEBUG_PANEL['padding'] + 5 + i * 20))
     
     # Draw lane occupancy
-    lane_text = [f"{lane}: {count}/4" for lane, count in lane_counts.items()]
+    lane_text = [f"{lane}: {count}/{MAX_VEHICLES_PER_LANE}" for lane, count in lane_counts.items()]
     for i, text in enumerate(lane_text):
         text_surface = font.render(text, True, BLACK)
-        screen.blit(text_surface, (WIDTH - 100, 130 + i * 20)) 
+        screen.blit(text_surface, (panel_x + 10, DEBUG_PANEL['padding'] + 200 + i * 20))
+    
+    # Draw debug visualization elements
+    if DEBUG_MODE:
+        # Draw lane entry/exit points
+        for lane, pos_data in LANES.items():
+            # Entry points
+            pygame.draw.circle(screen, DEBUG_COLORS['lane_entry'], pos_data['in'], 5)
+            # Exit points
+            pygame.draw.circle(screen, DEBUG_COLORS['lane_exit'], pos_data['out'], 5)
+            # Queue positions
+            for pos in pos_data['queue']:
+                pygame.draw.circle(screen, DEBUG_COLORS['queue_pos'], pos, 3)
+        
+        # Draw intersection center marker
+        pygame.draw.circle(screen, DEBUG_COLORS['intersection'], (WIDTH//2, HEIGHT//2), 8, width=2) 

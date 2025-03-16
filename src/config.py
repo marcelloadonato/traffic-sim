@@ -1,60 +1,112 @@
 import pygame
 
-# Initialize Pygame
-pygame.init()
-WIDTH, HEIGHT = 800, 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Traffic Simulation MVP")
-clock = pygame.time.Clock()
+# Display settings
+WIDTH = 1200  # Increased from previous size
+HEIGHT = 800  # Increased from previous size
+FPS = 30
+SLOW_FPS = 10
 
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
 GREEN = (0, 255, 0)
-GRAY = (100, 100, 100)
-LIGHT_GRAY = (200, 200, 200)
-DARK_GRAY = (50, 50, 50)
-GRASS_GREEN = (100, 200, 100)
+BLUE = (0, 0, 255)
+YELLOW = (255, 255, 0)
+GRAY = (128, 128, 128)
+DARK_GRAY = (64, 64, 64)
+GRASS_GREEN = (34, 139, 34)
 BUILDING_COLORS = [
-    (180, 180, 180),  # Light gray
-    (160, 140, 120),  # Tan
-    (120, 110, 100),  # Brown
-    (100, 130, 170),  # Blue-gray
-    (150, 150, 170)   # Lavender-gray
+    (139, 69, 19),    # Brown
+    (160, 82, 45),    # Sienna
+    (205, 133, 63),   # Peru
+    (210, 180, 140),  # Tan
+    (188, 143, 143),  # Rosy brown
 ]
 
-# Road dimensions
+# Road settings
 ROAD_WIDTH = 100
-LANE_WIDTH = 40
-LANE_MARKER_WIDTH = 5
 LANE_MARKER_LENGTH = 30
+LANE_MARKER_WIDTH = 3
 LANE_MARKER_GAP = 20
 
-# Lane positions for different directions
-LANES = {
-    'north': {'in': (WIDTH//2, HEIGHT//2 - 70), 'out': (WIDTH//2, 50), 'direction': 'down', 
-              'queue': [(WIDTH//2, 100), (WIDTH//2, 150), (WIDTH//2, 200), (WIDTH//2, 250)]},
-    'south': {'in': (WIDTH//2, HEIGHT//2 + 70), 'out': (WIDTH//2, HEIGHT - 50), 'direction': 'up',
-              'queue': [(WIDTH//2, HEIGHT - 100), (WIDTH//2, HEIGHT - 150), (WIDTH//2, HEIGHT - 200), (WIDTH//2, HEIGHT - 250)]},
-    'east': {'in': (WIDTH//2 + 70, HEIGHT//2), 'out': (WIDTH - 50, HEIGHT//2), 'direction': 'left',
-             'queue': [(WIDTH - 100, HEIGHT//2), (WIDTH - 150, HEIGHT//2), (WIDTH - 200, HEIGHT//2), (WIDTH - 250, HEIGHT//2)]},
-    'west': {'in': (WIDTH//2 - 70, HEIGHT//2), 'out': (50, HEIGHT//2), 'direction': 'right',
-             'queue': [(100, HEIGHT//2), (150, HEIGHT//2), (200, HEIGHT//2), (250, HEIGHT//2)]}
+# Debug colors
+DEBUG_COLORS = {
+    'lane_entry': (255, 0, 0),      # Red for entry points
+    'lane_exit': (0, 0, 255),       # Blue for exit points
+    'queue_pos': (0, 180, 0),       # Dark green for queue positions
+    'intersection': (255, 255, 0),   # Yellow for intersection center
+    'collision_area': (255, 0, 0, 128),  # Transparent red for collision detection
+    'route_preview': (0, 255, 255)   # Cyan for route preview
 }
 
-# Intermediate positions for smoother movement
-INTERMEDIATE_POSITIONS = {
-    'north_to_intersection': [(WIDTH//2, HEIGHT//2 - 50), (WIDTH//2, HEIGHT//2 - 30)],
-    'south_to_intersection': [(WIDTH//2, HEIGHT//2 + 50), (WIDTH//2, HEIGHT//2 + 30)],
-    'east_to_intersection': [(WIDTH//2 + 50, HEIGHT//2), (WIDTH//2 + 30, HEIGHT//2)],
-    'west_to_intersection': [(WIDTH//2 - 50, HEIGHT//2), (WIDTH//2 - 30, HEIGHT//2)],
-    'intersection_to_north': [(WIDTH//2, HEIGHT//2 - 30), (WIDTH//2, HEIGHT//2 - 50)],
-    'intersection_to_south': [(WIDTH//2, HEIGHT//2 + 30), (WIDTH//2, HEIGHT//2 + 50)],
-    'intersection_to_east': [(WIDTH//2 + 30, HEIGHT//2), (WIDTH//2 + 50, HEIGHT//2)],
-    'intersection_to_west': [(WIDTH//2 - 30, HEIGHT//2), (WIDTH//2 - 50, HEIGHT//2)]
+# UI settings
+FONT_SIZE = {
+    'stats': 16,
+    'debug': 14,
+    'episode': 24,
+    'vehicle_id': 10
 }
+
+STATS_PANEL = {
+    'width': 250,
+    'height': 130,
+    'padding': 10,
+    'background': (240, 240, 240, 200),
+    'border': BLACK
+}
+
+DEBUG_PANEL = {
+    'width': 250,
+    'height': 200,
+    'padding': 10,
+    'background': (240, 240, 240, 200),
+    'border': BLACK
+}
+
+# Vehicle settings
+VEHICLE_TYPES = {
+    'car': {'size': 1.0, 'speed': 1.0},
+    'truck': {'size': 1.4, 'speed': 0.8},
+    'van': {'size': 1.2, 'speed': 0.9}
+}
+
+# Simulation settings
+DEBUG_MODE = False
+SLOW_MODE = False
+EPISODE_LENGTH = 1000
+MAX_VEHICLES_PER_LANE = 4
+TOTAL_VEHICLES = 20
+
+# Lane positions (adjusted for new window size)
+LANES = {
+    'north': {
+        'in': (WIDTH//2 - ROAD_WIDTH//4, 0),
+        'out': (WIDTH//2 + ROAD_WIDTH//4, 0),
+        'queue': [(WIDTH//2 - ROAD_WIDTH//4, y) for y in range(50, HEIGHT//2 - ROAD_WIDTH//2 - 50, 30)]
+    },
+    'south': {
+        'in': (WIDTH//2 + ROAD_WIDTH//4, HEIGHT),
+        'out': (WIDTH//2 - ROAD_WIDTH//4, HEIGHT),
+        'queue': [(WIDTH//2 + ROAD_WIDTH//4, y) for y in range(HEIGHT - 50, HEIGHT//2 + ROAD_WIDTH//2 + 50, -30)]
+    },
+    'east': {
+        'in': (WIDTH, HEIGHT//2 + ROAD_WIDTH//4),
+        'out': (WIDTH, HEIGHT//2 - ROAD_WIDTH//4),
+        'queue': [(x, HEIGHT//2 + ROAD_WIDTH//4) for x in range(WIDTH - 50, WIDTH//2 + ROAD_WIDTH//2 + 50, -30)]
+    },
+    'west': {
+        'in': (0, HEIGHT//2 - ROAD_WIDTH//4),
+        'out': (0, HEIGHT//2 + ROAD_WIDTH//4),
+        'queue': [(x, HEIGHT//2 - ROAD_WIDTH//4) for x in range(50, WIDTH//2 - ROAD_WIDTH//2 - 50, 30)]
+    }
+}
+
+# Initialize Pygame
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Traffic Simulation MVP")
+clock = pygame.time.Clock()
 
 # Vehicle colors
 VEHICLE_COLORS = [
@@ -68,11 +120,14 @@ VEHICLE_COLORS = [
     (100, 100, 100) # Gray
 ]
 
-# Simulation settings
-EPISODE_LENGTH = 1000  # Length of an episode in ticks
-DEBUG_MODE = True
-SLOW_MODE = True  # Slow down simulation for better visibility
-
-# Vehicle spawn settings
-MAX_VEHICLES_PER_LANE = 4
-TOTAL_VEHICLES = 20 
+# Intermediate positions for smoother movement
+INTERMEDIATE_POSITIONS = {
+    'north_to_intersection': [(WIDTH//2, HEIGHT//2 - 50), (WIDTH//2, HEIGHT//2 - 30)],
+    'south_to_intersection': [(WIDTH//2, HEIGHT//2 + 50), (WIDTH//2, HEIGHT//2 + 30)],
+    'east_to_intersection': [(WIDTH//2 + 50, HEIGHT//2), (WIDTH//2 + 30, HEIGHT//2)],
+    'west_to_intersection': [(WIDTH//2 - 50, HEIGHT//2), (WIDTH//2 - 30, HEIGHT//2)],
+    'intersection_to_north': [(WIDTH//2, HEIGHT//2 - 30), (WIDTH//2, HEIGHT//2 - 50)],
+    'intersection_to_south': [(WIDTH//2, HEIGHT//2 + 30), (WIDTH//2, HEIGHT//2 + 50)],
+    'intersection_to_east': [(WIDTH//2 + 30, HEIGHT//2), (WIDTH//2 + 50, HEIGHT//2)],
+    'intersection_to_west': [(WIDTH//2 - 30, HEIGHT//2), (WIDTH//2 - 50, HEIGHT//2)]
+} 
