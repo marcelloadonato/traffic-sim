@@ -226,6 +226,10 @@ def check_collision(vehicle, other_vehicles, light_state):
     # Get current vehicle position
     x, y = get_vehicle_position(vehicle)
     
+    # Define safe distances
+    SAFE_DISTANCE_SAME_LANE = 50  # Increased from default to ensure more space between vehicles
+    SAFE_DISTANCE_INTERSECTION = 40  # Safe distance in intersection
+    
     # Check if vehicle is at intersection
     is_at_intersection = vehicle.position == 'intersection'
     
@@ -256,61 +260,61 @@ def check_collision(vehicle, other_vehicles, light_state):
                     distance_to_queue = abs(x - last_queue[0])
                 
                 # Stop if we're close enough to the queue position
-                if distance_to_queue < 20:  # Small threshold to ensure we stop at queue position
+                if distance_to_queue < SAFE_DISTANCE_SAME_LANE:
                     vehicle.stopped_for_collision = True
                     return True
     
-    # Check for collisions with other vehicles
+    # Check for vehicles ahead in the same lane or approaching the same intersection point
     for other in other_vehicles:
-        if other == vehicle:
-            continue
-        
-        # Get other vehicle's position
-        other_x, other_y = get_vehicle_position(other)
-        
-        # Calculate distance between vehicles
-        distance = math.sqrt((x - other_x)**2 + (y - other_y)**2)
-        
-        # Check for collision based on vehicle types and positions
-        collision_threshold = 30  # Base collision threshold
-        
-        # Adjust threshold based on vehicle types
-        if vehicle.vehicle_type == "truck" or other.vehicle_type == "truck":
-            collision_threshold += 10
-        elif vehicle.vehicle_type == "van" or other.vehicle_type == "van":
-            collision_threshold += 5
-        
-        # Only check for collisions if:
-        # 1. Both vehicles are in the same lane or intersection
-        # 2. The other vehicle is ahead of this vehicle
-        # 3. The distance is less than the collision threshold
-        if distance < collision_threshold:
-            # Check if vehicles are in the same lane or one is in intersection
-            same_lane = (vehicle.position == other.position or 
-                        is_at_intersection or 
-                        other.position == 'intersection')
+        if other != vehicle and other.state != "arrived":
+            # Get other vehicle's position
+            other_x, other_y = get_vehicle_position(other)
             
-            # Check if other vehicle is ahead
-            is_ahead = False
-            if vehicle.position in ['north', 'south']:
-                is_ahead = (vehicle.position == 'north' and y > other_y) or \
-                          (vehicle.position == 'south' and y < other_y)
-            elif vehicle.position in ['east', 'west']:
-                is_ahead = (vehicle.position == 'east' and x < other_x) or \
-                          (vehicle.position == 'west' and x > other_x)
-            elif is_at_intersection:
-                # In intersection, check based on route waypoints
-                next_waypoint = None
-                for pos in vehicle.route[route_idx+1:]:
-                    if isinstance(pos, tuple):
-                        next_waypoint = pos
-                        break
-                if next_waypoint:
-                    dx = next_waypoint[0] - x
-                    dy = next_waypoint[1] - y
-                    is_ahead = (abs(dx) < collision_threshold and abs(dy) < collision_threshold)
+            # Calculate distance between vehicles
+            dx = x - other_x
+            dy = y - other_y
+            distance = (dx * dx + dy * dy) ** 0.5
             
-            if same_lane and is_ahead:
+            # Check if vehicles are in the same lane
+            same_lane = vehicle.position == other.position
+            
+            # Check if they're approaching the same intersection point
+            approaching_same_intersection = (
+                is_approaching and 
+                other.position == 'intersection' and 
+                next_pos == 'intersection'
+            )
+            
+            # Check if they're both in the intersection
+            both_in_intersection = (
+                is_at_intersection and 
+                other.position == 'intersection'
+            )
+            
+            # Determine required safe distance based on situation
+            required_distance = SAFE_DISTANCE_SAME_LANE if same_lane else SAFE_DISTANCE_INTERSECTION
+            
+            # Additional check for vehicles in front
+            if same_lane:
+                # For north-south lanes
+                if vehicle.position in ['north', 'south']:
+                    # Check if other vehicle is ahead (using y-coordinate)
+                    if (vehicle.position == 'north' and other_y < y) or \
+                       (vehicle.position == 'south' and other_y > y):
+                        if abs(dy) < SAFE_DISTANCE_SAME_LANE and abs(dx) < 20:  # 20px lateral tolerance
+                            vehicle.stopped_for_collision = True
+                            return True
+                # For east-west lanes
+                elif vehicle.position in ['east', 'west']:
+                    # Check if other vehicle is ahead (using x-coordinate)
+                    if (vehicle.position == 'east' and other_x > x) or \
+                       (vehicle.position == 'west' and other_x < x):
+                        if abs(dx) < SAFE_DISTANCE_SAME_LANE and abs(dy) < 20:  # 20px lateral tolerance
+                            vehicle.stopped_for_collision = True
+                            return True
+            
+            # Stop if too close to another vehicle in intersection
+            if (approaching_same_intersection or both_in_intersection) and distance < required_distance:
                 vehicle.stopped_for_collision = True
                 return True
     

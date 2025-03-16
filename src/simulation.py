@@ -201,46 +201,55 @@ class Simulation:
     
     def handle_events(self):
         """Handle user input events"""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+        try:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     self.running = False
-                elif event.key == pygame.K_d:
-                    global DEBUG_MODE
-                    DEBUG_MODE = not DEBUG_MODE
-                elif event.key == pygame.K_s:
-                    global SLOW_MODE
-                    SLOW_MODE = not SLOW_MODE
-                elif event.key == pygame.K_e:
-                    if not self.episode_ended:
-                        self.episode_ended = True
-                        if hasattr(self, 'data_recorder'):
-                            self.data_recorder.end_episode(self.light_change_count)
-                elif event.key == pygame.K_n:
-                    if self.episode_ended:
-                        self.reset()
-                elif event.key == pygame.K_c and self.tutorial_mode:
-                    self.tutorial_step += 1
-                elif self.manual_mode:
-                    if event.key == pygame.K_SPACE:
-                        # Only change lights if they're not in yellow transition
-                        if self.ns_light != "yellow" and self.ew_light != "yellow":
-                            # Start yellow transition for current green light
-                            if self.ns_light == "green":
-                                self.ns_light = "yellow"
-                                self.light_timer = 3
-                            elif self.ew_light == "green":
-                                self.ew_light = "yellow"
-                                self.light_timer = 3
-                            # Set the other light to green
-                            if self.ns_light == "yellow":
-                                self.ew_light = "green"
-                            else:
-                                self.ns_light = "green"
+                    return
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.running = False
+                        return
+                    elif event.key == pygame.K_d:
+                        global DEBUG_MODE
+                        DEBUG_MODE = not DEBUG_MODE
+                    elif event.key == pygame.K_s:
+                        global SLOW_MODE
+                        SLOW_MODE = not SLOW_MODE
+                    elif event.key == pygame.K_e:
+                        if not self.episode_ended:
+                            self.episode_ended = True
                             if hasattr(self, 'data_recorder'):
-                                self.data_recorder.record_light_change()
+                                self.data_recorder.end_episode(self.light_change_count)
+                    elif event.key == pygame.K_n:
+                        if self.episode_ended:
+                            self.reset()
+                    elif event.key == pygame.K_c and self.tutorial_mode:
+                        self.tutorial_step += 1
+                    elif self.manual_mode:
+                        if event.key == pygame.K_SPACE:
+                            # Only change lights if they're not in yellow transition
+                            if self.ns_light != "yellow" and self.ew_light != "yellow":
+                                # Start yellow transition for current green light
+                                if self.ns_light == "green":
+                                    self.ns_light = "yellow"
+                                    self.light_timer = 3
+                                elif self.ew_light == "green":
+                                    self.ew_light = "yellow"
+                                    self.light_timer = 3
+                                # Set the other light to green
+                                if self.ns_light == "yellow":
+                                    self.ew_light = "green"
+                                else:
+                                    self.ns_light = "green"
+                                if hasattr(self, 'data_recorder'):
+                                    self.data_recorder.record_light_change()
+        except pygame.error as e:
+            if "display Surface quit" in str(e):
+                self.running = False
+                return
+            else:
+                raise
     
     def update_vehicles(self):
         """Update the state of all vehicles in the simulation"""
@@ -385,33 +394,40 @@ class Simulation:
     
     def draw(self, data_recorder):
         """Draw the current simulation state"""
-        screen = get_screen()
-        screen.fill(WHITE)
-        
-        # Draw buildings
-        draw_buildings(self.buildings)
-        
-        # Draw road and traffic lights
-        draw_road()
-        draw_traffic_lights(self.ns_light, self.ew_light)
-        
-        # Draw vehicles
-        for vehicle in self.active_vehicles:
-            draw_vehicle(vehicle, DEBUG_MODE)
-        
-        # Draw debug info if debug mode is enabled
-        if DEBUG_MODE:
-            # Calculate lane occupancy
-            lane_counts = {}
-            for vehicle in self.active_vehicles:
-                if vehicle.position in ['north', 'south', 'east', 'west']:
-                    lane_counts[vehicle.position] = lane_counts.get(vehicle.position, 0) + 1
+        try:
+            screen = get_screen()
+            screen.fill(WHITE)
             
-            draw_debug_info(self.ns_light, self.ew_light, self.active_vehicles, 
-                          self.spawn_schedule, self.current_tick, EPISODE_LENGTH, lane_counts)
-        
-        # Force display update
-        pygame.display.flip()
+            # Draw buildings
+            draw_buildings(self.buildings)
+            
+            # Draw road and traffic lights
+            draw_road()
+            draw_traffic_lights(self.ns_light, self.ew_light)
+            
+            # Draw vehicles
+            for vehicle in self.active_vehicles:
+                draw_vehicle(vehicle, DEBUG_MODE)
+            
+            # Draw debug info if debug mode is enabled
+            if DEBUG_MODE:
+                # Calculate lane occupancy
+                lane_counts = {}
+                for vehicle in self.active_vehicles:
+                    if vehicle.position in ['north', 'south', 'east', 'west']:
+                        lane_counts[vehicle.position] = lane_counts.get(vehicle.position, 0) + 1
+                
+                draw_debug_info(self.ns_light, self.ew_light, self.active_vehicles, 
+                              self.spawn_schedule, self.current_tick, EPISODE_LENGTH, lane_counts)
+            
+            # Force display update
+            pygame.display.flip()
+        except pygame.error as e:
+            if "display Surface quit" in str(e):
+                self.running = False
+                return
+            else:
+                raise
     
     def update_simulation(self):
         """Update the simulation for one step without drawing (used by RL)"""
@@ -686,103 +702,103 @@ class Simulation:
         }
     
     def create_route(self, start, end):
-        """Create a route from start edge to end edge"""
+        """Create a route from start edge to end edge with proper lane offsets"""
         route = []
         
-        # Starting position
+        # Define lane offsets (positive = right side of road in direction of travel)
+        LANE_OFFSET = 15  # pixels from center
+        
+        # Starting position with lane offset
         if start == 'north':
-            route.extend([start, (WIDTH//2, 50), (WIDTH//2, 100)])
+            route.extend([start, (WIDTH//2 + LANE_OFFSET, 50), (WIDTH//2 + LANE_OFFSET, 100)])
         elif start == 'south':
-            route.extend([start, (WIDTH//2, HEIGHT-50), (WIDTH//2, HEIGHT-100)])
+            route.extend([start, (WIDTH//2 - LANE_OFFSET, HEIGHT-50), (WIDTH//2 - LANE_OFFSET, HEIGHT-100)])
         elif start == 'east':
-            route.extend([start, (WIDTH-50, HEIGHT//2), (WIDTH-100, HEIGHT//2)])
+            route.extend([start, (WIDTH-50, HEIGHT//2 - LANE_OFFSET), (WIDTH-100, HEIGHT//2 - LANE_OFFSET)])
         elif start == 'west':
-            route.extend([start, (50, HEIGHT//2), (100, HEIGHT//2)])
+            route.extend([start, (50, HEIGHT//2 + LANE_OFFSET), (100, HEIGHT//2 + LANE_OFFSET)])
         
-        # Add intersection approach
+        # Add intersection approach with lane offset
         if start == 'north':
-            route.extend([(WIDTH//2, HEIGHT//2 - 100), (WIDTH//2, HEIGHT//2 - 50)])
+            route.extend([(WIDTH//2 + LANE_OFFSET, HEIGHT//2 - 100), (WIDTH//2 + LANE_OFFSET, HEIGHT//2 - 50)])
         elif start == 'south':
-            route.extend([(WIDTH//2, HEIGHT//2 + 100), (WIDTH//2, HEIGHT//2 + 50)])
+            route.extend([(WIDTH//2 - LANE_OFFSET, HEIGHT//2 + 100), (WIDTH//2 - LANE_OFFSET, HEIGHT//2 + 50)])
         elif start == 'east':
-            route.extend([(WIDTH//2 + 100, HEIGHT//2), (WIDTH//2 + 50, HEIGHT//2)])
+            route.extend([(WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET), (WIDTH//2 + 50, HEIGHT//2 - LANE_OFFSET)])
         elif start == 'west':
-            route.extend([(WIDTH//2 - 100, HEIGHT//2), (WIDTH//2 - 50, HEIGHT//2)])
+            route.extend([(WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET), (WIDTH//2 - 50, HEIGHT//2 + LANE_OFFSET)])
         
-        # Add intersection waypoint
-        route.append('intersection')
-        
-        # Add intersection exit based on turn type
+        # Add intersection waypoint with offset based on turn
         if (start == 'north' and end == 'west') or (start == 'east' and end == 'south'):
             route.extend([
+                'intersection',
                 (WIDTH//2 - 25, HEIGHT//2 - 25),  # Smooth turn point
-                (WIDTH//2 - 50, HEIGHT//2),       # Exit point
-                (WIDTH//2 - 100, HEIGHT//2)       # Past intersection
+                (WIDTH//2 - 50, HEIGHT//2 + LANE_OFFSET),  # Exit point with proper lane
+                (WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET)  # Past intersection
             ])
         elif (start == 'north' and end == 'east') or (start == 'west' and end == 'south'):
             route.extend([
+                'intersection',
                 (WIDTH//2 + 25, HEIGHT//2 - 25),  # Smooth turn point
-                (WIDTH//2 + 50, HEIGHT//2),       # Exit point
-                (WIDTH//2 + 100, HEIGHT//2)       # Past intersection
+                (WIDTH//2 + 50, HEIGHT//2 - LANE_OFFSET),  # Exit point with proper lane
+                (WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET)  # Past intersection
             ])
         elif (start == 'south' and end == 'west') or (start == 'east' and end == 'north'):
             route.extend([
+                'intersection',
                 (WIDTH//2 - 25, HEIGHT//2 + 25),  # Smooth turn point
-                (WIDTH//2 - 50, HEIGHT//2),       # Exit point
-                (WIDTH//2 - 100, HEIGHT//2)       # Past intersection
+                (WIDTH//2 - 50, HEIGHT//2 + LANE_OFFSET),  # Exit point with proper lane
+                (WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET)  # Past intersection
             ])
         elif (start == 'south' and end == 'east') or (start == 'west' and end == 'north'):
             route.extend([
+                'intersection',
                 (WIDTH//2 + 25, HEIGHT//2 + 25),  # Smooth turn point
-                (WIDTH//2 + 50, HEIGHT//2),       # Exit point
-                (WIDTH//2 + 100, HEIGHT//2)       # Past intersection
+                (WIDTH//2 + 50, HEIGHT//2 - LANE_OFFSET),  # Exit point with proper lane
+                (WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET)  # Past intersection
             ])
         elif start == 'north' and end == 'south':
             route.extend([
-                # Create a straight path through intersection
-                (WIDTH//2, HEIGHT//2 - 25),  # Entry point
-                (WIDTH//2, HEIGHT//2),       # Middle point
-                (WIDTH//2, HEIGHT//2 + 25),  # Exit point
-                (WIDTH//2, HEIGHT//2 + 50),  # Past intersection
-                (WIDTH//2, HEIGHT//2 + 100)  # Further past intersection
+                'intersection',
+                (WIDTH//2 + LANE_OFFSET, HEIGHT//2),  # Keep right through intersection
+                (WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 25),  # Exit point
+                (WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 50),  # Past intersection
+                (WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 100)  # Further past intersection
             ])
         elif start == 'south' and end == 'north':
             route.extend([
-                # Create a straight path through intersection
-                (WIDTH//2, HEIGHT//2 + 25),  # Entry point
-                (WIDTH//2, HEIGHT//2),       # Middle point
-                (WIDTH//2, HEIGHT//2 - 25),  # Exit point
-                (WIDTH//2, HEIGHT//2 - 50),  # Past intersection
-                (WIDTH//2, HEIGHT//2 - 100)  # Further past intersection
+                'intersection',
+                (WIDTH//2 - LANE_OFFSET, HEIGHT//2),  # Keep right through intersection
+                (WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 25),  # Exit point
+                (WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 50),  # Past intersection
+                (WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 100)  # Further past intersection
             ])
         elif start == 'east' and end == 'west':
             route.extend([
-                # Create a straight path through intersection
-                (WIDTH//2 + 25, HEIGHT//2),  # Entry point
-                (WIDTH//2, HEIGHT//2),       # Middle point
-                (WIDTH//2 - 25, HEIGHT//2),  # Exit point
-                (WIDTH//2 - 50, HEIGHT//2),  # Past intersection
-                (WIDTH//2 - 100, HEIGHT//2)  # Further past intersection
+                'intersection',
+                (WIDTH//2, HEIGHT//2 - LANE_OFFSET),  # Keep right through intersection
+                (WIDTH//2 - 25, HEIGHT//2 - LANE_OFFSET),  # Exit point
+                (WIDTH//2 - 50, HEIGHT//2 - LANE_OFFSET),  # Past intersection
+                (WIDTH//2 - 100, HEIGHT//2 - LANE_OFFSET)  # Further past intersection
             ])
         elif start == 'west' and end == 'east':
             route.extend([
-                # Create a straight path through intersection
-                (WIDTH//2 - 25, HEIGHT//2),  # Entry point
-                (WIDTH//2, HEIGHT//2),       # Middle point
-                (WIDTH//2 + 25, HEIGHT//2),  # Exit point
-                (WIDTH//2 + 50, HEIGHT//2),  # Past intersection
-                (WIDTH//2 + 100, HEIGHT//2)  # Further past intersection
+                'intersection',
+                (WIDTH//2, HEIGHT//2 + LANE_OFFSET),  # Keep right through intersection
+                (WIDTH//2 + 25, HEIGHT//2 + LANE_OFFSET),  # Exit point
+                (WIDTH//2 + 50, HEIGHT//2 + LANE_OFFSET),  # Past intersection
+                (WIDTH//2 + 100, HEIGHT//2 + LANE_OFFSET)  # Further past intersection
             ])
         
-        # Add exit path
+        # Add exit path with proper lane offset
         if end == 'north':
-            route.extend([(WIDTH//2, 100), (WIDTH//2, 50), (WIDTH//2, 0)])
+            route.extend([(WIDTH//2 - LANE_OFFSET, 100), (WIDTH//2 - LANE_OFFSET, 50), (WIDTH//2 - LANE_OFFSET, 0)])
         elif end == 'south':
-            route.extend([(WIDTH//2, HEIGHT-100), (WIDTH//2, HEIGHT-50), (WIDTH//2, HEIGHT)])
+            route.extend([(WIDTH//2 + LANE_OFFSET, HEIGHT-100), (WIDTH//2 + LANE_OFFSET, HEIGHT-50), (WIDTH//2 + LANE_OFFSET, HEIGHT)])
         elif end == 'east':
-            route.extend([(WIDTH-100, HEIGHT//2), (WIDTH-50, HEIGHT//2), (WIDTH, HEIGHT//2)])
+            route.extend([(WIDTH-100, HEIGHT//2 + LANE_OFFSET), (WIDTH-50, HEIGHT//2 + LANE_OFFSET), (WIDTH, HEIGHT//2 + LANE_OFFSET)])
         elif end == 'west':
-            route.extend([(100, HEIGHT//2), (50, HEIGHT//2), (0, HEIGHT//2)])  # Use explicit coordinates
+            route.extend([(100, HEIGHT//2 - LANE_OFFSET), (50, HEIGHT//2 - LANE_OFFSET), (0, HEIGHT//2 - LANE_OFFSET)])
         
         return route
 

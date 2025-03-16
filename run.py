@@ -55,57 +55,60 @@ def main():
         update_timer = QTimer()
         
         def update_simulation():
-            # Process PyQt events
-            app.processEvents()
-            
-            # Process Pygame events
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    update_timer.stop()
-                    pygame.quit()
-                    app.quit()
-                    return
-            
-            # Update simulation
-            if test_mode:
-                # Run one step of test mode
-                if simulation.running:
-                    # Update traffic lights
-                    simulation.update_traffic_lights()
-                    
-                    # Update vehicles
-                    simulation.update_vehicles()
-                    
-                    # Draw everything
-                    simulation.draw(None)
-                    
-                    # Increment tick
-                    simulation.current_tick += 1
+            try:
+                # Process PyQt events
+                app.processEvents()
+                
+                # Update simulation
+                if test_mode:
+                    # Run one step of test mode
+                    if simulation.running:
+                        # Update traffic lights
+                        simulation.update_traffic_lights()
+                        
+                        # Update vehicles
+                        simulation.update_vehicles()
+                        
+                        # Draw everything
+                        simulation.draw(None)
+                        
+                        # Increment tick
+                        simulation.current_tick += 1
+                    else:
+                        update_timer.stop()
+                        pygame.quit()
+                        app.quit()
+                        return
                 else:
+                    # Normal simulation mode
+                    if simulation.running:
+                        simulation.step(data_recorder)
+                    else:
+                        update_timer.stop()
+                        pygame.quit()
+                        app.quit()
+                        return
+                
+                # Update metrics in the dashboard
+                metrics = simulation.get_metrics()
+                dashboard.metrics_panel.update_metrics(metrics)
+                
+                # Update traffic counts
+                traffic_counts = simulation.get_traffic_counts()
+                dashboard.visualization_panel.update_traffic_plot(traffic_counts)
+                
+                # Control frame rate
+                pygame_clock.tick(30)
+            except pygame.error as e:
+                if "display Surface quit" in str(e):
+                    # Handle graceful shutdown
                     update_timer.stop()
                     pygame.quit()
                     app.quit()
                     return
-            else:
-                # Normal simulation mode
-                if simulation.running:
-                    simulation.step(data_recorder)
                 else:
-                    update_timer.stop()
-                    pygame.quit()
-                    app.quit()
-                    return
-            
-            # Update metrics in the dashboard
-            metrics = simulation.get_metrics()
-            dashboard.metrics_panel.update_metrics(metrics)
-            
-            # Update traffic counts
-            traffic_counts = simulation.get_traffic_counts()
-            dashboard.visualization_panel.update_traffic_plot(traffic_counts)
-            
-            # Control frame rate
-            pygame_clock.tick(30)
+                    # Re-raise other pygame errors
+                    raise
         
         # Connect timer to update function
         update_timer.timeout.connect(update_simulation)

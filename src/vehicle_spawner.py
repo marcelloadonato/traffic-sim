@@ -1,5 +1,5 @@
 import random
-from src.config import TOTAL_VEHICLES, EPISODE_LENGTH, MAX_VEHICLES_PER_LANE, VEHICLE_COLORS
+from src.config import TOTAL_VEHICLES, EPISODE_LENGTH, MAX_VEHICLES_PER_LANE, VEHICLE_COLORS, WIDTH, HEIGHT
 from src.agent import Vehicle
 
 DETERMINISTIC_SPAWNING = True  # or True for fixed patterns
@@ -38,44 +38,74 @@ def generate_vehicle_spawn_schedule(total_vehicles=TOTAL_VEHICLES, max_ticks=EPI
     schedule.sort(key=lambda x: x['spawn_tick'])
     return schedule
 
-def spawn_vehicles(current_tick, spawn_schedule, active_vehicles, simulation=None):
-    """Check if any vehicles should spawn this tick"""
-    if simulation is None:
-        return  # Cannot spawn vehicles without simulation reference
-        
-    # Check spawn schedule
-    vehicles_to_spawn = [v for v in spawn_schedule if v['spawn_tick'] == current_tick]
+def spawn_vehicles(current_tick, spawn_schedule, active_vehicles, simulation):
+    """Spawn new vehicles according to schedule with proper spacing"""
+    # Minimum distance between spawned vehicles
+    MIN_SPAWN_DISTANCE = 80  # Increased minimum distance between spawned vehicles
     
-    # Check if there's room in the queue (limit 4 vehicles per lane)
-    lane_counts = {}
-    for vehicle in active_vehicles:
-        if vehicle.position in ['north', 'south', 'east', 'west']:
-            lane_counts[vehicle.position] = lane_counts.get(vehicle.position, 0) + 1
-    
-    for vehicle_info in vehicles_to_spawn[:]:
-        lane = vehicle_info['start']
-        # Only spawn if there are fewer than 4 vehicles in this lane
-        if lane_counts.get(lane, 0) < MAX_VEHICLES_PER_LANE:
-            # Create route using simulation's create_route function
-            route = simulation.create_route(vehicle_info['start'], vehicle_info['destination'])
+    # Process spawn schedule
+    if current_tick in spawn_schedule:
+        for spawn_data in spawn_schedule[current_tick]:
+            start_pos, end_pos = spawn_data
             
-            if route:
-                # Create the vehicle with proper route
-                vehicle = Vehicle(
-                    route=route,
-                    position=vehicle_info['start'],
-                    vehicle_type=random.choice(["car", "van", "truck"]),
-                    position_threshold=40
-                )
-                vehicle.destination = vehicle_info['destination']
-                vehicle.color = random.choice(VEHICLE_COLORS)
-                vehicle.interpolated_position = None
+            # Check if there's enough space to spawn
+            can_spawn = True
+            spawn_coords = get_spawn_coordinates(start_pos)
+            
+            # Check distance to other vehicles in the same lane
+            for vehicle in active_vehicles:
+                if vehicle.position == start_pos:
+                    vehicle_coords = vehicle.get_current_coords()
+                    if vehicle_coords:
+                        dx = spawn_coords[0] - vehicle_coords[0]
+                        dy = spawn_coords[1] - vehicle_coords[1]
+                        distance = (dx * dx + dy * dy) ** 0.5
+                        if distance < MIN_SPAWN_DISTANCE:
+                            can_spawn = False
+                            break
+            
+            if can_spawn:
+                # Create route
+                route = simulation.create_route(start_pos, end_pos)
                 
-                # Add to active vehicles
-                active_vehicles.append(vehicle)
-                spawn_schedule.remove(vehicle_info)
-                lane_counts[lane] = lane_counts.get(lane, 0) + 1
-                
-                # Debug print
-                print(f"Spawned vehicle from {vehicle_info['start']} to {vehicle_info['destination']} at tick {current_tick}")
-        # If lane is full, leave in schedule for later 
+                if route:
+                    # Create new vehicle with improved settings
+                    vehicle = Vehicle(
+                        route=route,
+                        position=start_pos,
+                        vehicle_type=random.choice(["car", "van", "truck"]),
+                        position_threshold=100
+                    )
+                    vehicle.destination = end_pos
+                    
+                    # Set initial interpolated position
+                    vehicle.interpolated_position = spawn_coords
+                    
+                    # Set appropriate speeds for vehicle type
+                    if vehicle.vehicle_type == "truck":
+                        vehicle.base_speed = 2
+                        vehicle.speed = 2
+                    elif vehicle.vehicle_type == "van":
+                        vehicle.base_speed = 3
+                        vehicle.speed = 3
+                    else:  # car
+                        vehicle.base_speed = 4
+                        vehicle.speed = 4
+                    
+                    # Initialize movement state
+                    vehicle.state = "moving"
+                    vehicle.position_time = 0
+                    
+                    active_vehicles.append(vehicle)
+
+def get_spawn_coordinates(position):
+    """Get spawn coordinates for a given position"""
+    if position == 'north':
+        return (WIDTH//2 + 15, 0)  # Offset to right lane
+    elif position == 'south':
+        return (WIDTH//2 - 15, HEIGHT)  # Offset to right lane
+    elif position == 'east':
+        return (WIDTH, HEIGHT//2 - 15)  # Offset to right lane
+    elif position == 'west':
+        return (0, HEIGHT//2 + 15)  # Offset to right lane
+    return None 
