@@ -198,11 +198,28 @@ def get_vehicle_direction(vehicle):
     dx = curr_coords[0] - next_coords[0]  # Flipped
     dy = curr_coords[1] - next_coords[1]  # Flipped
     
-    # Determine direction based on the larger component
-    if abs(dx) > abs(dy):
-        return 'right' if dx > 0 else 'left'
+    # Add threshold to prevent jitter
+    threshold = 10  # Minimum movement to change direction
+    
+    # Get previous direction for this vehicle
+    prev_dir = get_vehicle_direction.previous.get(id(vehicle), 'right')
+    
+    # Determine direction based on the larger component and threshold
+    if abs(dx) > abs(dy) and abs(dx) > threshold:
+        new_dir = 'right' if dx > 0 else 'left'
+    elif abs(dy) > threshold:
+        new_dir = 'down' if dy > 0 else 'up'
     else:
-        return 'down' if dy > 0 else 'up'
+        # If movement is below threshold, maintain previous direction
+        new_dir = prev_dir
+    
+    # Store the new direction for next time
+    get_vehicle_direction.previous[id(vehicle)] = new_dir
+    
+    return new_dir
+
+# Initialize the previous direction dictionary
+get_vehicle_direction.previous = {}
 
 def check_collision(vehicle, other_vehicles, light_state):
     """Check for collisions with other vehicles and traffic lights"""

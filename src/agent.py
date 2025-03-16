@@ -2,58 +2,80 @@ import random
 from src.config import LANES, INTERMEDIATE_POSITIONS, WIDTH, HEIGHT
 
 class Vehicle:
-    def __init__(self, route, position, vehicle_type="car", position_threshold=40):
+    def __init__(self, route, position, vehicle_type="car", position_threshold=100):
         self.route = route
-        self.position = position  # Starting position (edge of map)
+        self.position = position
         self.vehicle_type = vehicle_type
         self.position_time = 0
         self.position_threshold = position_threshold
-        self.state = "moving"
+        self.state = "moving"  # Start in moving state
         self.stopped_for_collision = False
-        self.satisfaction = 10.0  # Initial satisfaction
+        self.satisfaction = 10.0
         self.commute_time = 0
-        self.destination = None  # Will be set when vehicle is created
-        self.waiting_time = 0  # Add waiting_time attribute
-        self.queue_position = 0  # Add queue_position attribute
-        self.last_state = None  # Add last_state attribute
-        self.log_counter = 0  # Add log_counter attribute
-        
-        # Animation and display properties
-        self.interpolated_position = None  # For smooth movement between positions
-        self.color = (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200))
-        self.size_multiplier = 1.0 if vehicle_type == "car" else 1.5 if vehicle_type == "truck" else 1.2
-        
-        # Performance metrics
-        self.speed = 1.0
-        self.base_speed = 15  # Reduced base speed
-        self.last_speed = 15  # Reduced base speed
-        self.wait_time = 0
-        self.total_wait_time = 0
-        self.stop_count = 0
-        self.acceleration_changes = 0
-        self.total_ticks = 0
+        self.destination = None
+        self.waiting_time = 0
+        self.queue_position = 0
+        self.last_state = None
+        self.log_counter = 0
         
         # Set size and speed based on vehicle type
         if vehicle_type == "truck":
             self.size = 30
-            self.base_speed = 10  # Slower for trucks
-            self.speed = 10
+            self.base_speed = 2
+            self.speed = 2
         elif vehicle_type == "van":
             self.size = 25
-            self.base_speed = 12  # Medium speed for vans
-            self.speed = 12
+            self.base_speed = 3
+            self.speed = 3
         else:  # car
             self.size = 20
-            self.base_speed = 15  # Faster for cars but still reasonable
-            self.speed = 15
-            
+            self.base_speed = 4
+            self.speed = 4
+        
+        # Animation and display properties
+        self.color = (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200))
+        self.size_multiplier = 1.0 if vehicle_type == "car" else 1.5 if vehicle_type == "truck" else 1.2
+        
+        # Set initial interpolated position based on starting position
+        if position == 'east':
+            self.interpolated_position = (WIDTH, HEIGHT//2)
+        elif position == 'west':
+            self.interpolated_position = (0, HEIGHT//2)
+        elif position == 'north':
+            self.interpolated_position = (WIDTH//2, 0)
+        elif position == 'south':
+            self.interpolated_position = (WIDTH//2, HEIGHT)
+        else:
+            self.interpolated_position = None
+        
+        # Performance tracking
+        self.total_ticks = 0
+        self.wait_time = 0
+        self.total_wait_time = 0
+        self.stop_count = 0
+        self.acceleration_changes = 0
+        self.last_speed = self.speed
+        
+        # Movement tracking
+        self.movement_history = []
+        self.direction_changes = []
+        self.interpolation_values = []
+        self.movement_vectors = []
+        self.route_progression = []
+        self.position_time_history = []
+        self.last_movement_vector = None
+        self.reversal_count = 0
+        self.last_interpolated_position = None
+    
     def is_at_edge(self):
         """Check if vehicle is at an edge position"""
         return self.position in ['north', 'south', 'east', 'west']
-        
-    def get_edge_coords(self):
-        """Get the coordinates for edge positions"""
-        if self.position == 'north':
+    
+    def get_current_coords(self):
+        """Get current coordinates based on position"""
+        if isinstance(self.position, tuple):
+            return self.position
+        elif self.position == 'north':
             return (WIDTH//2, 0)
         elif self.position == 'south':
             return (WIDTH//2, HEIGHT)
@@ -61,7 +83,64 @@ class Vehicle:
             return (WIDTH, HEIGHT//2)
         elif self.position == 'west':
             return (0, HEIGHT//2)
+        elif self.position == 'intersection':
+            return (WIDTH//2, HEIGHT//2)
         return None
+    
+    def get_next_coords(self, next_pos):
+        """Get next coordinates based on next position"""
+        if isinstance(next_pos, tuple):
+            return next_pos
+        elif next_pos == 'north':
+            return (WIDTH//2, 0)
+        elif next_pos == 'south':
+            return (WIDTH//2, HEIGHT)
+        elif next_pos == 'east':
+            return (WIDTH, HEIGHT//2)
+        elif next_pos == 'west':
+            return (0, HEIGHT//2)
+        elif next_pos == 'intersection':
+            return (WIDTH//2, HEIGHT//2)
+        return None
+    
+    def is_behind(self, other_vehicle):
+        """Check if this vehicle is behind another vehicle"""
+        if not self.interpolated_position or not other_vehicle.interpolated_position:
+            return False
+        
+        # Get current direction based on route
+        current_idx = self.route.index(self.position)
+        if current_idx >= len(self.route) - 1:
+            return False
+        
+        next_pos = self.route[current_idx + 1]
+        next_coords = self.get_next_coords(next_pos)
+        if not next_coords:
+            return False
+        
+        # Calculate direction vector
+        dx = next_coords[0] - self.interpolated_position[0]
+        dy = next_coords[1] - self.interpolated_position[1]
+        
+        # Get distance to other vehicle
+        other_dx = other_vehicle.interpolated_position[0] - self.interpolated_position[0]
+        other_dy = other_vehicle.interpolated_position[1] - self.interpolated_position[1]
+        
+        # Check if other vehicle is in our path and close enough to matter
+        if abs(dx) > abs(dy):  # Moving horizontally
+            if abs(other_dy) > 30:  # Not in same lane
+                return False
+            if dx > 0:  # Moving right
+                return other_dx > 0 and other_dx < 100
+            else:  # Moving left
+                return other_dx < 0 and other_dx > -100
+        else:  # Moving vertically
+            if abs(other_dx) > 30:  # Not in same lane
+                return False
+            if dy > 0:  # Moving down
+                return other_dy > 0 and other_dy < 100
+            else:  # Moving up
+                return other_dy < 0 and other_dy > -100
     
     def _determine_route(self):
         """Create a complete route from start to destination with proper waypoints."""
@@ -184,99 +263,87 @@ class Vehicle:
         """Update vehicle state and position"""
         self.total_ticks += 1
         
-        # Update speed and track acceleration changes
-        if self.state == "moving":
-            if self.speed != self.last_speed:
-                self.acceleration_changes += 1
-            self.last_speed = self.speed
-            
-            # Update wait time if stopped at intersection
-            if self.at_intersection() and self._should_stop_at_red(light_state):
-                self.wait_time += 1
-                self.total_wait_time += 1
-                self.speed = 0  # Ensure we stop completely
-            else:
-                self.wait_time = 0
-                self.speed = self.base_speed
-        
-        # Track stops
-        if self.state == "waiting" and self.last_state != "waiting":
-            self.stop_count += 1
-            self.speed = 0  # Ensure we stop completely
-        
-        self.last_state = self.state
-        
-        self.commute_time += 1
-        self.log_counter = (self.log_counter + 1) % 10  # Only log every 10 ticks
-        
         # Check if we've reached our destination
         if self.position == self.destination:
-            # Only mark as arrived if we're at the edge
             if self.is_at_edge():
                 self.state = "arrived"
-                self.animation_offset = 0  # Reset animation offset
-                if self.log_counter == 0:
-                    print(f"Vehicle arrived at destination: {self.destination}")
                 return True
-            else:
-                # Keep moving if we're not at the edge yet
-                self.state = "moving"
-                self.speed = self.base_speed
-                return False
         
         # Get current position index in route
-        current_idx = self.route.index(self.position)
-        if current_idx >= len(self.route) - 1:
+        try:
+            current_idx = self.route.index(self.position)
+            if current_idx >= len(self.route) - 1:
+                return False
+            
+            # Get next position
+            next_pos = self.route[current_idx + 1]
+            
+            # Get current and next coordinates
+            current_coords = self.get_current_coords()
+            next_coords = self.get_next_coords(next_pos)
+            
+            if not current_coords or not next_coords:
+                return False
+            
+            # Check if we need to stop
+            should_stop = False
+            
+            # Stop at red or yellow light if approaching intersection
+            if self.position in ['north', 'south', 'east', 'west'] and next_pos == 'intersection':
+                ns_light, ew_light = light_state
+                if ((self.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
+                    (self.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
+                    should_stop = True
+                    self.state = "waiting"
+                    self.waiting_time += 1
+                    self.speed = 0
+                    return False
+            
+            # Check for vehicles ahead if provided
+            if not should_stop and vehicles:
+                for other_vehicle in vehicles:
+                    if other_vehicle != self and other_vehicle.state != "arrived":
+                        if self.is_behind(other_vehicle):
+                            should_stop = True
+                            self.state = "waiting"
+                            self.waiting_time += 1
+                            self.speed = 0
+                            return False
+            
+            # Update position if not stopped
+            if not should_stop:
+                self.state = "moving"
+                self.waiting_time = 0
+                
+                # Update position time
+                self.position_time += self.speed
+                
+                # Calculate progress
+                progress = min(self.position_time / self.position_threshold, 1.0)
+                
+                # Calculate new interpolated position
+                new_x = current_coords[0] + (next_coords[0] - current_coords[0]) * progress
+                new_y = current_coords[1] + (next_coords[1] - current_coords[1]) * progress
+                
+                # Store new interpolated position
+                self.interpolated_position = (new_x, new_y)
+                
+                # Move to next position when threshold is reached
+                if progress >= 1.0:
+                    self.position = next_pos
+                    self.position_time = 0
+                    
+                    # Check for arrival at destination
+                    if self.position == self.destination and self.is_at_edge():
+                        self.state = "arrived"
+                        return True
+                    
+                    return True
+            
             return False
-        
-        # Get next position
-        next_pos = self.route[current_idx + 1]
-        
-        # Check if we need to stop for traffic light
-        should_stop = False
-        
-        # Stop at red or yellow light if approaching intersection
-        if self.position in ['north', 'south', 'east', 'west'] and next_pos == 'intersection':
-            ns_light, ew_light = light_state
-            if ((self.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
-                (self.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
-                should_stop = True
-                if self.state != "waiting" and self.log_counter == 0:
-                    print(f"Vehicle stopped at {ns_light if self.position in ['north', 'south'] else ew_light} light: {self.position}")
-                self.state = "waiting"
-                self.waiting_time += 1
-                self.animation_offset = 0
-                self.speed = 0  # Ensure we stop completely
-                self.position_time = 0  # Reset position time to maintain position
-                return False  # Prevent further movement this tick
-        
-        # Check for vehicles ahead
-        if not should_stop and vehicles:
-            for other_vehicle in vehicles:
-                if other_vehicle != self and other_vehicle.state != "arrived":
-                    if self.is_behind(other_vehicle):
-                        should_stop = True
-                        if self.state != "waiting" and self.log_counter == 0:
-                            print(f"Vehicle stopped behind other vehicle: {self.position}")
-                        self.state = "waiting"
-                        self.waiting_time += 1
-                        self.animation_offset = 0
-                        self.speed = 0  # Ensure we stop completely
-                        self.position_time = 0  # Reset position time to maintain position
-                        return False  # Prevent further movement this tick
-        
-        # Update position if not stopped
-        if not should_stop:
-            self.state = "moving"
-            self.waiting_time = 0
-            self.position_time += self.speed
-            if self.position_time >= 1.0:
-                self.position = next_pos
-                self.position_time = 0
-                self.animation_offset = 0
-                return True
-        
-        return False
+            
+        except ValueError as e:
+            return False
     
     def check_collision_ahead(self):
         """This will be set by the simulation to check for collisions"""
@@ -314,3 +381,14 @@ class Vehicle:
         if self.speed != self.last_speed:
             self.acceleration_changes += 1
         self.last_speed = self.speed 
+
+    def get_movement_analysis(self):
+        """Get analysis of movement patterns and anomalies"""
+        return {
+            'total_reversals': self.reversal_count,
+            'direction_changes': self.direction_changes,
+            'movement_history': self.movement_history,
+            'interpolation_values': self.interpolation_values,
+            'route_progression': self.route_progression,
+            'position_time_history': self.position_time_history
+        } 

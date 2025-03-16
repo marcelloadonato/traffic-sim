@@ -43,6 +43,9 @@ class Simulation:
         # Current simulation mode
         self.simulation_mode = "RL"  # Default mode
         
+        # Add log counter for debug output
+        self.log_counter = 0
+        
         # Generate buildings in each quadrant
         self._generate_buildings()
         
@@ -249,105 +252,90 @@ class Simulation:
         
         # Update each vehicle
         for vehicle in self.active_vehicles:
-            # Get current position index in route
             try:
+                # Check if vehicle has arrived at destination
+                if vehicle.state == "arrived":
+                    vehicles_to_remove.append(vehicle)
+                    continue
+                
+                # Get current position index in route
                 current_idx = vehicle.route.index(vehicle.position)
+                if current_idx >= len(vehicle.route) - 1:
+                    continue
                 
-                # Get current and next positions for interpolation
-                current_pos = vehicle.position
-                next_pos = None if current_idx >= len(vehicle.route) - 1 else vehicle.route[current_idx + 1]
+                # Get next position
+                next_pos = vehicle.route[current_idx + 1]
                 
-                # Convert string positions to coordinates
-                current_coords = current_pos
-                if isinstance(current_pos, str):
-                    if current_pos == 'north':
-                        current_coords = (WIDTH//2, 0)
-                    elif current_pos == 'south':
-                        current_coords = (WIDTH//2, HEIGHT)
-                    elif current_pos == 'east':
-                        current_coords = (WIDTH, HEIGHT//2)
-                    elif current_pos == 'west':
-                        current_coords = (0, HEIGHT//2)  # Keep y-coordinate consistent
-                    elif current_pos == 'intersection':
-                        # Use the previous position to determine intersection entry point
-                        if current_idx > 0 and isinstance(vehicle.route[current_idx - 1], tuple):
-                            current_coords = vehicle.route[current_idx - 1]
-                        else:
-                            current_coords = (WIDTH//2, HEIGHT//2)
+                # Get current and next coordinates
+                current_coords = vehicle.get_current_coords()
+                next_coords = vehicle.get_next_coords(next_pos)
                 
-                next_coords = next_pos
-                if isinstance(next_pos, str):
-                    if next_pos == 'north':
-                        next_coords = (WIDTH//2, 0)
-                    elif next_pos == 'south':
-                        next_coords = (WIDTH//2, HEIGHT)
-                    elif next_pos == 'east':
-                        next_coords = (WIDTH, HEIGHT//2)
-                    elif next_pos == 'west':
-                        next_coords = (0, HEIGHT//2)  # Keep y-coordinate consistent
-                    elif next_pos == 'intersection':
-                        # Use the next waypoint after intersection to determine direction
-                        if current_idx + 2 < len(vehicle.route):
-                            next_coords = vehicle.route[current_idx + 2]
-                        else:
-                            next_coords = current_coords
+                if not current_coords or not next_coords:
+                    continue
                 
-                # Check if vehicle has reached its final destination
-                if vehicle.position == vehicle.destination:
-                    # Only remove if we're completely off screen
-                    if (vehicle.destination == 'west' and vehicle.interpolated_position[0] < -50) or \
-                       (vehicle.destination == 'east' and vehicle.interpolated_position[0] > WIDTH + 50) or \
-                       (vehicle.destination == 'north' and vehicle.interpolated_position[1] < -50) or \
-                       (vehicle.destination == 'south' and vehicle.interpolated_position[1] > HEIGHT + 50):
-                        vehicles_to_remove.append(vehicle)
+                # Check if we need to stop
+                should_stop = False
+                
+                # Stop at red or yellow light if approaching intersection
+                if vehicle.position in ['north', 'south', 'east', 'west'] and next_pos == 'intersection':
+                    ns_light, ew_light = light_state
+                    if ((vehicle.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
+                        (vehicle.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
+                        should_stop = True
+                        vehicle.state = "waiting"
+                        vehicle.waiting_time += 1
+                        vehicle.speed = 0
                         continue
                 
-                # Check for collisions with other vehicles
-                should_stop = check_collision(vehicle, self.active_vehicles, light_state)
+                # Check for vehicles ahead
+                if not should_stop:
+                    for other_vehicle in self.active_vehicles:
+                        if other_vehicle != vehicle and other_vehicle.state != "arrived":
+                            if vehicle.is_behind(other_vehicle):
+                                should_stop = True
+                                vehicle.state = "waiting"
+                                vehicle.waiting_time += 1
+                                vehicle.speed = 0
+                                break
                 
-                # Update vehicle state if no collision
-                if not should_stop and isinstance(current_coords, tuple) and isinstance(next_coords, tuple):
-                    # Calculate interpolated position
-                    vehicle.position_time += 1
+                # Update position if not stopped
+                if not should_stop:
+                    vehicle.state = "moving"
+                    vehicle.waiting_time = 0
+                    
+                    # Update position time
+                    vehicle.position_time += vehicle.speed
+                    
+                    # Calculate progress
                     progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
                     
-                    # Linear interpolation between current and next position
-                    interpolated_x = current_coords[0] + (next_coords[0] - current_coords[0]) * progress
-                    interpolated_y = current_coords[1] + (next_coords[1] - current_coords[1]) * progress
+                    # Calculate new interpolated position
+                    new_x = current_coords[0] + (next_coords[0] - current_coords[0]) * progress
+                    new_y = current_coords[1] + (next_coords[1] - current_coords[1]) * progress
                     
-                    # Store interpolated position for drawing
-                    vehicle.interpolated_position = (interpolated_x, interpolated_y)
-                    vehicle.state = "moving"
+                    # Store new interpolated position
+                    vehicle.interpolated_position = (new_x, new_y)
                     
                     # Move to next position when threshold is reached
-                    if vehicle.position_time >= vehicle.position_threshold:
+                    if progress >= 1.0:
                         vehicle.position = next_pos
                         vehicle.position_time = 0
                         
-                        # If we're exiting the intersection, ensure we maintain position
-                        if vehicle.position in ['north', 'south', 'east', 'west']:
-                            vehicle.interpolated_position = LANES[vehicle.position]['out']
-                            vehicle.state = "moving"  # Keep moving state for proper award calculation
-                        else:
-                            vehicle.interpolated_position = None
-                elif should_stop:
-                    vehicle.state = "waiting"
-                    # Maintain the current position when stopped
-                    if isinstance(current_coords, tuple):
-                        vehicle.interpolated_position = current_coords
-                    # Reset position time to ensure we stay in place
-                    vehicle.position_time = 0
+                        # Check for arrival at destination
+                        if vehicle.position == vehicle.destination and vehicle.is_at_edge():
+                            vehicle.state = "arrived"
+                            vehicles_to_remove.append(vehicle)
             
-            except (ValueError, IndexError) as e:
-                # If there's an error with the route, remove the vehicle
+            except Exception as e:
+                print(f"Error updating vehicle {id(vehicle) % 1000}: {str(e)}")
                 vehicles_to_remove.append(vehicle)
                 continue
         
-        # Remove vehicles that have reached their destination at the edge
+        # Remove completed vehicles
         for vehicle in vehicles_to_remove:
             if vehicle in self.active_vehicles:
                 self.active_vehicles.remove(vehicle)
-                self.removed_vehicles.append(vehicle)  # Add to removed vehicles for metrics
+                self.removed_vehicles.append(vehicle)
         
         # Only spawn random vehicles if not in test mode
         if not hasattr(self, 'test_mode') or not self.test_mode:
@@ -359,16 +347,41 @@ class Simulation:
                 route = self.create_route(spawn_edge, destination)
                 
                 if route:
+                    # Create new vehicle with improved settings
                     vehicle = Vehicle(
                         route=route,
                         position=spawn_edge,
                         vehicle_type=random.choice(["car", "van", "truck"]),
-                        position_threshold=40
+                        position_threshold=100  # Consistent threshold for smooth movement
                     )
-                    vehicle.destination = destination  # Add the destination attribute
-                    vehicle.interpolated_position = None
+                    vehicle.destination = destination
+                    
+                    # Set initial interpolated position based on spawn edge
+                    if spawn_edge == 'east':
+                        vehicle.interpolated_position = (WIDTH, HEIGHT//2)
+                    elif spawn_edge == 'west':
+                        vehicle.interpolated_position = (0, HEIGHT//2)
+                    elif spawn_edge == 'north':
+                        vehicle.interpolated_position = (WIDTH//2, 0)
+                    elif spawn_edge == 'south':
+                        vehicle.interpolated_position = (WIDTH//2, HEIGHT)
+                    
+                    # Set appropriate speeds for vehicle type
+                    if vehicle.vehicle_type == "truck":
+                        vehicle.base_speed = 2
+                        vehicle.speed = 2
+                    elif vehicle.vehicle_type == "van":
+                        vehicle.base_speed = 3
+                        vehicle.speed = 3
+                    else:  # car
+                        vehicle.base_speed = 4
+                        vehicle.speed = 4
+                    
+                    # Initialize movement state
+                    vehicle.state = "moving"
+                    vehicle.position_time = 0
+                    
                     self.active_vehicles.append(vehicle)
-                    print(f"Spawned vehicle from {spawn_edge} to {destination} at tick {self.current_tick}")
     
     def draw(self, data_recorder):
         """Draw the current simulation state"""
@@ -782,19 +795,37 @@ class Simulation:
         self.active_vehicles = []
         self.removed_vehicles = []
         
-        # Create a route from east to west
-        route = self.create_route('east', 'west')
+        # Create a simple route from east to west
+        route = [
+            'east',
+            (WIDTH-100, HEIGHT//2),
+            (WIDTH-50, HEIGHT//2),
+            (WIDTH//2 + 50, HEIGHT//2),
+            'intersection',
+            (WIDTH//2 - 50, HEIGHT//2),
+            (50, HEIGHT//2),
+            (0, HEIGHT//2),
+            'west'
+        ]
         
-        # Create the test vehicle with a lower position_threshold for faster movement
+        # Create the test vehicle with very slow movement settings
         test_vehicle = Vehicle(
             route=route,
             position='east',
             vehicle_type="car",
-            position_threshold=20  # Reduced from 40 to make the vehicle move faster
+            position_threshold=200  # Much higher threshold for slower movement
         )
         test_vehicle.destination = 'west'
         test_vehicle.interpolated_position = None
-        test_vehicle.id = "TEST_VEHICLE"  # Special ID for tracking
+        test_vehicle.id = "TEST_VEHICLE"
+        
+        # Set initial interpolated position
+        test_vehicle.interpolated_position = (WIDTH, HEIGHT//2)
+        
+        # Override speed settings for test vehicle with very slow speed
+        test_vehicle.base_speed = 1  # Very slow speed
+        test_vehicle.speed = 1
+        test_vehicle.last_speed = 1
         
         # Add vehicle to simulation
         self.active_vehicles.append(test_vehicle)
@@ -802,6 +833,9 @@ class Simulation:
         print(f"Starting Position: east")
         print(f"Destination: west")
         print(f"Route: {route}")
+        print(f"Initial Interpolated Position: {test_vehicle.interpolated_position}")
+        print(f"Position Threshold: {test_vehicle.position_threshold}")
+        print(f"Base Speed: {test_vehicle.base_speed}")
         print("=========================\n")
         
         return test_vehicle
@@ -815,10 +849,17 @@ class Simulation:
         self.ns_light = "red"
         self.ew_light = "green"
         
-        # Track previous state for change detection
+        # Track previous values for change detection
         prev_state = None
         prev_position = None
-        prev_direction = None
+        prev_route_index = None
+        prev_interpolated = None
+        last_logged_tick = -10  # Ensure first tick is logged
+        
+        print("\n=== Initial Route ===")
+        for i, point in enumerate(test_vehicle.route):
+            print(f"Point {i}: {point}")
+        print("===================\n")
         
         while self.running and test_vehicle in self.active_vehicles:
             # Handle events
@@ -827,41 +868,67 @@ class Simulation:
             # Update traffic lights
             self.update_traffic_lights()
             
+            # Store pre-update interpolated position
+            pre_update_pos = test_vehicle.interpolated_position
+            
             # Update vehicles
             self.update_vehicles()
             
-            # Calculate current direction based on interpolated position with threshold
-            current_direction = None
-            if hasattr(test_vehicle, 'interpolated_position') and test_vehicle.interpolated_position:
-                if isinstance(prev_position, tuple) and isinstance(test_vehicle.interpolated_position, tuple):
-                    dx = test_vehicle.interpolated_position[0] - prev_position[0]
-                    dy = test_vehicle.interpolated_position[1] - prev_position[1]
-                    # Only register direction change if movement is significant
-                    movement_threshold = 5  # Pixels
-                    if abs(dx) > movement_threshold or abs(dy) > movement_threshold:
-                        if abs(dx) > abs(dy):
-                            current_direction = "East" if dx > 0 else "West"
-                        else:
-                            current_direction = "South" if dy > 0 else "North"
-                    elif prev_direction:  # If movement is small, maintain previous direction
-                        current_direction = prev_direction
+            # Get current route index
+            current_route_index = test_vehicle.route.index(test_vehicle.position)
             
-            # Only print when there are changes
-            if test_vehicle.state != prev_state:
-                print(f"\nTick {self.current_tick} - State Change: {prev_state} -> {test_vehicle.state}")
-                print(f"Position: {test_vehicle.position}")
-                print(f"Interpolated Position: {test_vehicle.interpolated_position}")
+            # Calculate movement delta if we have both positions
+            if pre_update_pos and test_vehicle.interpolated_position:
+                delta_x = test_vehicle.interpolated_position[0] - pre_update_pos[0]
+                delta_y = test_vehicle.interpolated_position[1] - pre_update_pos[1]
+            else:
+                delta_x = delta_y = 0
+                
+            # Detect significant position changes or state changes
+            position_changed = (prev_interpolated != test_vehicle.interpolated_position)
+            route_point_changed = (prev_route_index != current_route_index)
+            state_changed = (prev_state != test_vehicle.state)
             
-            if current_direction != prev_direction and current_direction is not None:
-                print(f"Tick {self.current_tick} - Direction Change: {prev_direction} -> {current_direction}")
-                print(f"Movement: dx={dx:.2f}, dy={dy:.2f}")
-                print(f"Position: {test_vehicle.position}")
-                print(f"Interpolated Position: {test_vehicle.interpolated_position}")
+            # Log on significant changes or regular intervals
+            should_log = (
+                self.current_tick - last_logged_tick >= 10 or  # Regular interval
+                route_point_changed or                         # Route point change
+                state_changed or                              # State change
+                (abs(delta_x) > 50 or abs(delta_y) > 50)     # Large position change
+            )
+            
+            if should_log:
+                print(f"\n=== Movement Analysis at Tick {self.current_tick} ===")
+                print(f"Current Route Point: {test_vehicle.position}")
+                print(f"Route Index: {current_route_index}")
+                if current_route_index < len(test_vehicle.route) - 1:
+                    print(f"Next Route Point: {test_vehicle.route[current_route_index + 1]}")
+                
+                print(f"\nInterpolation Details:")
+                print(f"Previous Position: {pre_update_pos}")
+                print(f"Current Position: {test_vehicle.interpolated_position}")
+                print(f"Movement Delta: dx={delta_x:.2f}, dy={delta_y:.2f}")
+                print(f"Position Time: {test_vehicle.position_time}")
+                print(f"Progress: {(test_vehicle.position_time / test_vehicle.position_threshold):.2%}")
+                
+                if route_point_changed:
+                    print(f"\n!!! Route Point Changed !!!")
+                    print(f"Previous Point: {prev_position}")
+                    print(f"New Point: {test_vehicle.position}")
+                
+                if abs(delta_x) > 50 or abs(delta_y) > 50:
+                    print(f"\n!!! Large Position Change Detected !!!")
+                    print(f"Delta X: {delta_x:.2f}")
+                    print(f"Delta Y: {delta_y:.2f}")
+                
+                print("=" * 40)
+                last_logged_tick = self.current_tick
             
             # Update previous values
             prev_state = test_vehicle.state
-            prev_position = test_vehicle.interpolated_position
-            prev_direction = current_direction
+            prev_position = test_vehicle.position
+            prev_route_index = current_route_index
+            prev_interpolated = test_vehicle.interpolated_position
             
             # Draw everything
             self.draw(None)
@@ -871,4 +938,14 @@ class Simulation:
             clock.tick(30)
             
             # Increment tick
-            self.current_tick += 1 
+            self.current_tick += 1
+            
+            # End test if vehicle arrives
+            if test_vehicle.state == "arrived":
+                print("\n=== Test Complete ===")
+                print(f"Total Ticks: {self.current_tick}")
+                print(f"Final Route Point: {test_vehicle.position}")
+                print(f"Final Interpolated Position: {test_vehicle.interpolated_position}")
+                print(f"Final State: {test_vehicle.state}")
+                print("===================\n")
+                break 
