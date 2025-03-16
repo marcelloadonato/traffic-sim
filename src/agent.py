@@ -22,6 +22,15 @@ class Vehicle:
         self.waiting_time = 0  # Track continuous waiting time
         self.base_speed = 30  # Base speed in pixels per step
         
+        # New metrics tracking
+        self.stop_count = 0  # Number of times the vehicle has stopped
+        self.acceleration_changes = 0  # Number of acceleration/deceleration changes
+        self.total_ticks = 0  # Total number of ticks the vehicle has been active
+        self.speed = self.base_speed  # Current speed
+        self.last_speed = self.base_speed  # Previous speed for tracking changes
+        self.wait_time = 0  # Current wait time at intersection
+        self.total_wait_time = 0  # Total wait time throughout journey
+        
         # Adjust timing based on vehicle type
         if self.vehicle_type == "truck":
             self.position_threshold = 80  # Trucks move slower
@@ -149,6 +158,27 @@ class Vehicle:
     
     def update(self, light_state, current_fps=30):
         """Update vehicle state and position"""
+        self.total_ticks += 1
+        
+        # Update speed and track acceleration changes
+        if self.state == "moving":
+            if self.speed != self.last_speed:
+                self.acceleration_changes += 1
+            self.last_speed = self.speed
+            
+            # Update wait time if stopped at intersection
+            if self.at_intersection() and self._should_stop_at_red(light_state):
+                self.wait_time += 1
+                self.total_wait_time += 1
+            else:
+                self.wait_time = 0
+        
+        # Track stops
+        if self.state == "waiting" and self.last_state != "waiting":
+            self.stop_count += 1
+        
+        self.last_state = self.state
+        
         self.commute_time += 1
         self.log_counter = (self.log_counter + 1) % 10  # Only log every 10 ticks
         
@@ -158,12 +188,12 @@ class Vehicle:
             self.animation_offset = 0  # Reset animation offset
             if self.log_counter == 0:
                 print(f"Vehicle arrived at destination: {self.destination}")
-            return
+            return True
         
         # Get current position index in route
         current_idx = self.route.index(self.position)
         if current_idx >= len(self.route) - 1:
-            return
+            return False
         
         # Get next position
         next_pos = self.route[current_idx + 1]
@@ -221,12 +251,14 @@ class Vehicle:
                 self.satisfaction = max(0, self.satisfaction - 0.2)  # Decrease by 0.2 every 5 ticks
                 if self.log_counter == 0:
                     print(f"Vehicle satisfaction decreased to: {self.satisfaction:.1f}")
+        
+        return False
     
     def check_collision_ahead(self):
         """This will be set by the simulation to check for collisions"""
         return False  # Default implementation
     
-    def _should_stop_at_red(self):
+    def _should_stop_at_red(self, light_state):
         """Determine if this vehicle should stop at a red light based on its route."""
         if self.position in ['north', 'south']:
             # North-South traffic should stop on red light

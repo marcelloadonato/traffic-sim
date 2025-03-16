@@ -89,6 +89,20 @@ class DataRecorder(QObject):
         if vehicle.state == "arrived" and not self.active_vehicles:
             self.achievements.add("All Clear!")
     
+    def record_vehicle_failure(self, vehicle):
+        """Record data when a vehicle fails to complete its journey"""
+        # Record failure metrics
+        if hasattr(self, 'simulation'):
+            # Update episode data with failure information
+            self.episode_data.append({
+                'tick': self.simulation.current_tick,
+                'event': 'vehicle_failure',
+                'start_position': vehicle.start_position,
+                'destination': vehicle.destination,
+                'wait_time': vehicle.waiting_time,
+                'satisfaction': vehicle.satisfaction
+            })
+    
     def end_episode(self, light_change_count=None):
         """End the current episode and save data"""
         # Handle empty episode data

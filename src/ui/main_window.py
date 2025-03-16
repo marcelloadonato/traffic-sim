@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox
 from PyQt5.QtCore import QTimer
 from .control_panel import ControlPanel
 from .visualization_panel import VisualizationPanel
+from .metrics_panel import MetricsPanel
 from src.rl_agent import TrafficRLAgent
 
 class MainWindow(QMainWindow):
@@ -13,7 +14,7 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         self.setWindowTitle('Traffic Light Control System')
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 100, 1600, 800)  # Increased width to accommodate metrics panel
         
         # Create central widget and layout
         central_widget = QWidget()
@@ -27,6 +28,10 @@ class MainWindow(QMainWindow):
         # Create and add visualization panel
         self.visualization_panel = VisualizationPanel()
         layout.addWidget(self.visualization_panel)
+        
+        # Create and add metrics panel
+        self.metrics_panel = MetricsPanel()
+        layout.addWidget(self.metrics_panel)
         
         # Connect signals
         self.control_panel.learning_rate_changed.connect(self.update_learning_rate)
@@ -75,6 +80,10 @@ class MainWindow(QMainWindow):
             
             # Update light states
             self.control_panel.update_light_states(self.simulation_interface.ns_light, self.simulation_interface.ew_light)
+            
+            # Update metrics using simulation interface methods
+            metrics_data = self.simulation_interface.get_metrics()
+            self.metrics_panel.update_metrics(metrics_data)
             
             # Update tutorial message if in tutorial mode
             if self.simulation_interface.tutorial_mode and self.simulation_interface.tutorial_step < len(self.simulation_interface.tutorial_messages):
@@ -222,4 +231,32 @@ class MainWindow(QMainWindow):
     def on_training_error(self, error_msg):
         """Handle training errors"""
         self.update_button_states()
-        QMessageBox.critical(self, "Training Error", f"An error occurred during training: {error_msg}") 
+        QMessageBox.critical(self, "Training Error", f"An error occurred during training: {error_msg}")
+
+    def calculate_avg_wait_time(self):
+        """Calculate average wait time for vehicles at intersections"""
+        return self.simulation_interface.get_avg_wait_time()
+
+    def calculate_traffic_flow(self):
+        """Calculate traffic flow rate (vehicles per minute)"""
+        return self.simulation_interface.get_traffic_flow()
+
+    def calculate_queue_length(self):
+        """Calculate current queue length at intersections"""
+        return self.simulation_interface.get_queue_length()
+
+    def calculate_vehicle_density(self):
+        """Calculate vehicle density (vehicles per lane)"""
+        return self.simulation_interface.get_vehicle_density()
+
+    def calculate_avg_speed(self):
+        """Calculate average vehicle speed"""
+        return self.simulation_interface.get_avg_speed()
+
+    def calculate_stops_per_vehicle(self):
+        """Calculate average number of stops per vehicle"""
+        return self.simulation_interface.get_stops_per_vehicle()
+
+    def calculate_fuel_efficiency(self):
+        """Calculate fuel efficiency based on acceleration/deceleration patterns"""
+        return self.simulation_interface.get_fuel_efficiency() 

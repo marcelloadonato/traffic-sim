@@ -69,6 +69,11 @@ class Simulation:
         self.vehicle_positions = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 2), device=DEVICE)  # For all possible vehicles
         self.vehicle_states = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 4), device=DEVICE)  # [waiting, moving, arrived, satisfaction]
         self.light_states = torch.zeros(2, device=DEVICE)  # [ns_light, ew_light]
+        
+        # Add metrics tracking
+        self.last_arrived_count = 0
+        self.last_flow_update = 0
+        self.total_lanes = 4  # 2 lanes in each direction
     
     def _generate_buildings(self):
         """Helper method to generate buildings in all four quadrants"""
@@ -238,6 +243,15 @@ class Simulation:
         
         # Update vehicles in parallel where possible
         for vehicle in self.active_vehicles[:]:
+            # Check if vehicle has been waiting too long (e.g., 300 ticks)
+            if vehicle.state == "waiting" and vehicle.waiting_time > 300:
+                # Remove vehicle and record it as failed
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_vehicle_failure(vehicle)
+                self.removed_vehicles.append(vehicle)
+                self.active_vehicles.remove(vehicle)
+                continue
+                
             # Check if vehicle is about to enter occupied intersection
             if vehicle.position in ['north', 'south', 'east', 'west'] and vehicle.state == "moving":
                 next_idx = vehicle.route.index(vehicle.position) + 1
@@ -501,4 +515,68 @@ class Simulation:
             instruction_font = pygame.font.Font(None, 24)
             instruction_text = instruction_font.render(instruction, True, WHITE)
             instruction_rect = instruction_text.get_rect(center=(WIDTH//2, HEIGHT - 20))
-            get_screen().blit(instruction_text, instruction_rect) 
+            get_screen().blit(instruction_text, instruction_rect)
+    
+    def get_avg_wait_time(self):
+        """Calculate average wait time for vehicles at intersections"""
+        if not self.active_vehicles:
+            return 0
+        wait_times = [v.wait_time for v in self.active_vehicles if v.state == "waiting"]
+        return sum(wait_times) / len(wait_times) if wait_times else 0
+    
+    def get_traffic_flow(self):
+        """Calculate traffic flow rate (vehicles per minute)"""
+        current_tick = self.current_tick
+        if current_tick - self.last_flow_update >= 60:  # Update every minute
+            arrived_diff = len(self.removed_vehicles) - self.last_arrived_count
+            flow_rate = (arrived_diff * 60) / (current_tick - self.last_flow_update)
+            self.last_arrived_count = len(self.removed_vehicles)
+            self.last_flow_update = current_tick
+            return flow_rate
+        return 0
+    
+    def get_queue_length(self):
+        """Calculate current queue length at intersections"""
+        return sum(1 for v in self.active_vehicles if v.state == "waiting")
+    
+    def get_vehicle_density(self):
+        """Calculate vehicle density (vehicles per lane)"""
+        return len(self.active_vehicles) / self.total_lanes
+    
+    def get_avg_speed(self):
+        """Calculate average vehicle speed"""
+        if not self.active_vehicles:
+            return 0
+        speeds = [v.speed for v in self.active_vehicles if v.state == "moving"]
+        return sum(speeds) / len(speeds) if speeds else 0
+    
+    def get_stops_per_vehicle(self):
+        """Calculate average number of stops per vehicle"""
+        if not self.active_vehicles:
+            return 0
+        total_stops = sum(v.stop_count for v in self.active_vehicles)
+        return total_stops / len(self.active_vehicles)
+    
+    def get_fuel_efficiency(self):
+        """Calculate fuel efficiency based on acceleration/deceleration patterns"""
+        if not self.active_vehicles:
+            return 0
+        efficiency_scores = []
+        for v in self.active_vehicles:
+            if v.state == "moving":
+                # Penalize frequent acceleration/deceleration
+                smoothness = 1.0 - (v.acceleration_changes / max(1, v.total_ticks))
+                efficiency_scores.append(smoothness * 100)
+        return sum(efficiency_scores) / len(efficiency_scores) if efficiency_scores else 0
+    
+    def get_metrics(self):
+        """Get all metrics in a dictionary format"""
+        return {
+            'avg_wait_time': self.get_avg_wait_time(),
+            'traffic_flow': self.get_traffic_flow(),
+            'queue_length': self.get_queue_length(),
+            'vehicle_density': self.get_vehicle_density(),
+            'avg_speed': self.get_avg_speed(),
+            'stops_per_vehicle': self.get_stops_per_vehicle(),
+            'fuel_efficiency': self.get_fuel_efficiency()
+        } 
