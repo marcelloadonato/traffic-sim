@@ -39,16 +39,21 @@ class MainWindow(QMainWindow):
         self.control_panel.stop_button.clicked.connect(self.stop_training)
         self.control_panel.reset_button.clicked.connect(self.reset_simulation)
         
-        # Connect RL agent signals
-        self.rl_agent.training_finished.connect(self.on_training_finished)
-        self.rl_agent.training_error.connect(self.on_training_error)
+        # Connect RL agent signals to visualization panel
+        if hasattr(self.simulation_interface, 'data_recorder'):
+            self.simulation_interface.data_recorder.traffic_update.connect(
+                self.visualization_panel.update_traffic_plot
+            )
+            self.simulation_interface.data_recorder.reward_update.connect(
+                self.visualization_panel.update_reward_plot
+            )
         
         # Set initial button states
         self.update_button_states()
         
     def update_button_states(self):
         """Update button states based on training status and simulation mode"""
-        is_training = self.rl_agent.is_training
+        is_training = self.simulation_interface.training_in_progress
         current_mode = self.control_panel.get_simulation_mode()
         
         # Only enable RL controls in RL mode
@@ -90,17 +95,17 @@ class MainWindow(QMainWindow):
         """Update the simulation mode"""
         try:
             # Stop any ongoing training
-            if self.rl_agent.is_training:
-                self.rl_agent.stop_training()
+            if self.simulation_interface.training_in_progress:
+                self.simulation_interface.rl_agent.stop_training()
             
-            # Update simulation mode
-            self.simulation_interface.set_mode(mode)
-            
-            # Reset simulation
+            # Reset the simulation
             self.simulation_interface.reset()
             
             # Clear visualizations
             self.visualization_panel.clear_plots()
+            
+            # Set the new mode
+            self.simulation_interface.set_mode(mode)
             
             # Update button states
             self.update_button_states()
@@ -108,13 +113,24 @@ class MainWindow(QMainWindow):
             # Show mode-specific message
             if mode == "Tutorial":
                 QMessageBox.information(self, "Tutorial Mode", 
-                    "Welcome to Tutorial Mode! You'll learn about traffic light control step by step.")
+                    "Welcome to Tutorial Mode!\n\n"
+                    "This mode will guide you through the traffic simulation system.\n"
+                    "Press C to advance through the tutorial steps.")
             elif mode == "Manual":
                 QMessageBox.information(self, "Manual Mode", 
-                    "Manual Control Mode: Use arrow keys to control traffic lights.")
-                
+                    "Welcome to Manual Mode!\n\n"
+                    "You can control the traffic lights using the SPACE bar.\n"
+                    "Press SPACE to toggle between NS and EW green lights.")
+            else:  # RL Mode
+                QMessageBox.information(self, "RL Mode", 
+                    "Welcome to RL Mode!\n\n"
+                    "The AI agent will control the traffic lights.\n"
+                    "Use the controls to adjust training parameters.")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to change simulation mode: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to update simulation mode: {str(e)}")
+            print(f"Error updating simulation mode: {e}")
+            import traceback
+            traceback.print_exc()
         
     def start_training(self):
         """Start the RL agent training"""

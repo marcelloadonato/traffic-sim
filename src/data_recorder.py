@@ -11,9 +11,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
+from PyQt5.QtCore import QObject, pyqtSignal
 
-class DataRecorder:
+class DataRecorder(QObject):
+    # Signals for visualization updates
+    traffic_update = pyqtSignal(dict)  # Emits traffic counts by direction
+    reward_update = pyqtSignal(int, float)  # Emits (step, reward)
+    
     def __init__(self):
+        super().__init__()
         self.current_episode = 0
         self.episode_data = []
         self.total_score = 0
@@ -21,6 +27,7 @@ class DataRecorder:
         self.leaderboard_file = "data/leaderboard.csv"
         self.episode_metrics_file = "data/episode_metrics.csv"
         self.light_changes = 0  # Track light changes within episode
+        self.simulation = None  # Reference to simulation
         
         # Create data directory if it doesn't exist
         os.makedirs("data", exist_ok=True)
@@ -33,24 +40,44 @@ class DataRecorder:
         if not os.path.exists(self.episode_metrics_file):
             pd.DataFrame(columns=['episode', 'score', 'avg_satisfaction', 'avg_commute', 'light_changes', 'completion_rate']).to_csv(self.episode_metrics_file, index=False)
     
+    def set_simulation(self, simulation):
+        """Set the simulation reference"""
+        self.simulation = simulation
+    
     def record_tick(self, tick, light_state, waiting_count, moving_count, arrived_count, avg_satisfaction):
         """Record data for the current tick"""
-        try:
-            self.episode_data.append({
-                'tick': tick,
-                'light_state': light_state,
-                'waiting_count': waiting_count,
-                'moving_count': moving_count,
-                'arrived_count': arrived_count,
-                'avg_satisfaction': avg_satisfaction,
-                'light_changes': self.light_changes  # Add current light changes count
-            })
-            
-            # Update total score based on reward components
-            reward = -0.2 * (waiting_count + moving_count) + avg_satisfaction
-            self.total_score += reward
-        except Exception as e:
-            print(f"Error recording tick data: {e}")
+        self.episode_data.append({
+            'tick': tick,
+            'light_state': light_state,
+            'waiting_count': waiting_count,
+            'moving_count': moving_count,
+            'arrived_count': arrived_count,
+            'avg_satisfaction': avg_satisfaction,
+            'light_changes': self.light_changes  # Add current light changes count
+        })
+        
+        # Get traffic counts from simulation
+        if self.simulation:
+            traffic_counts = self.simulation.get_traffic_counts()
+            # Emit traffic update
+            self.traffic_update.emit(traffic_counts)
+        
+        # Calculate and emit reward
+        reward = self.calculate_reward(waiting_count, moving_count, avg_satisfaction)
+        self.reward_update.emit(tick, reward)
+    
+    def calculate_reward(self, waiting_count, moving_count, avg_satisfaction):
+        """Calculate reward based on current state"""
+        # Reward for vehicles moving (positive)
+        moving_reward = moving_count * 0.1
+        
+        # Penalty for waiting vehicles (negative)
+        waiting_penalty = waiting_count * -0.2
+        
+        # Reward for high satisfaction (positive)
+        satisfaction_reward = avg_satisfaction * 0.3
+        
+        return moving_reward + waiting_penalty + satisfaction_reward
     
     def record_light_change(self):
         """Record when a light changes state"""
@@ -131,74 +158,45 @@ class DataRecorder:
         if not self.episode_data:
             return
             
-        df = pd.DataFrame(self.episode_data)
-        
-        # Individual plots
-        plt.figure(figsize=(10, 6))
-        plt.plot(df['tick'], df['avg_satisfaction'], 'b-')
-        plt.title('Learning Curve')
-        plt.xlabel('Tick')
-        plt.ylabel('Average Satisfaction')
-        plt.grid(True)
-        plt.savefig('data/learning_curve.png')
-        plt.close()
-        
-        plt.figure(figsize=(10, 6))
-        plt.plot(df['tick'], df['waiting_count'] + df['moving_count'], 'r-')
-        plt.title('Traffic Flow')
-        plt.xlabel('Tick')
-        plt.ylabel('Vehicles')
-        plt.grid(True)
-        plt.savefig('data/traffic_flow.png')
-        plt.close()
-        
-        plt.figure(figsize=(10, 6))
-        plt.plot(df['tick'], df['light_changes'], 'g-')
-        plt.title('Light Changes')
-        plt.xlabel('Tick')
-        plt.ylabel('Number of Changes')
-        plt.grid(True)
-        plt.savefig('data/light_changes.png')
-        plt.close()
-        
-        # Combined plot with quadruple y-axes
-        fig, ax1 = plt.subplots(figsize=(12, 8))
-        
-        # Primary y-axis (left) for satisfaction (blue)
-        ax1.set_xlabel('Tick')
-        ax1.set_ylabel('Satisfaction', color='b')
-        ax1.plot(df['tick'], df['avg_satisfaction'], 'b-', label='Satisfaction')
-        ax1.tick_params(axis='y', labelcolor='b')
-        
-        # Secondary y-axis (right) for traffic flow (red)
-        ax2 = ax1.twinx()
-        ax2.set_ylabel('Traffic Flow', color='r')
-        ln1 = ax2.plot(df['tick'], df['waiting_count'] + df['moving_count'], 'r-', label='Traffic Flow')
-        ax2.tick_params(axis='y', labelcolor='r')
-        
-        # Third y-axis (far right) for light changes (green)
-        ax3 = ax1.twinx()
-        # Offset the third axis
-        ax3.spines['right'].set_position(('outward', 60))
-        ax3.set_ylabel('Light Changes', color='g')
-        ln2 = ax3.plot(df['tick'], df['light_changes'], 'g-', label='Light Changes')
-        ax3.tick_params(axis='y', labelcolor='g')
-        
-        # Add title and grid
-        plt.title('Traffic Simulation Metrics')
-        ax1.grid(True)
-        
-        # Combine legends from all axes
-        lns = [ax1.get_lines()[0]] + ln1 + ln2
-        labs = [l.get_label() for l in lns]
-        ax1.legend(lns, labs, loc='upper right')
-        
-        # Adjust layout to prevent label overlap
-        plt.tight_layout()
-        
-        plt.savefig('data/combined_metrics.png')
-        plt.close()
-        
+        try:
+            df = pd.DataFrame(self.episode_data)
+            
+            # Create figure with subplots
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
+            
+            # Plot satisfaction
+            ax1.plot(df['tick'], df['avg_satisfaction'], 'b-')
+            ax1.set_title('Average Satisfaction Over Time')
+            ax1.set_xlabel('Time Steps')
+            ax1.set_ylabel('Satisfaction')
+            ax1.grid(True)
+            
+            # Plot traffic flow
+            ax2.plot(df['tick'], df['waiting_count'] + df['moving_count'], 'r-')
+            ax2.set_title('Total Traffic Flow')
+            ax2.set_xlabel('Time Steps')
+            ax2.set_ylabel('Vehicles')
+            ax2.grid(True)
+            
+            # Plot light changes
+            ax3.plot(df['tick'], df['light_changes'], 'g-')
+            ax3.set_title('Light Changes Over Time')
+            ax3.set_xlabel('Time Steps')
+            ax3.set_ylabel('Number of Changes')
+            ax3.grid(True)
+            
+            # Adjust layout
+            plt.tight_layout()
+            
+            # Save the plot
+            plt.savefig('data/learning_curve.png')
+            plt.close()
+            
+        except Exception as e:
+            print(f"Error plotting learning curve: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def plot_episode_progress(self):
         """Plot metrics across episodes to show learning progress"""
         try:
@@ -249,6 +247,8 @@ class DataRecorder:
             
         except Exception as e:
             print(f"Error plotting episode progress: {e}")
+            import traceback
+            traceback.print_exc()
 
     def save_data(self):
         """Save collected data to CSV files"""

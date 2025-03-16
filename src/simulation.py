@@ -120,6 +120,7 @@ class Simulation:
     def set_data_recorder(self, data_recorder):
         """Set the data recorder for the simulation"""
         self.data_recorder = data_recorder
+        data_recorder.set_simulation(self)  # Set the simulation reference
     
     def get_avg_commute_time(self):
         """Get average commute time of completed vehicles"""
@@ -142,28 +143,98 @@ class Simulation:
                 waiting[vehicle.position] += 1
         return waiting
     
-    def set_traffic_lights(self, action):
-        """Set traffic lights based on RL agent action"""
-        if action == 0:  # NS green
-            if self.ew_light == "green":
-                self.ew_light = "yellow"
-                self.ew_yellow_countdown = 30
-                self.light_change_count += 1
+    def update_traffic_lights(self):
+        """Update traffic light states with yellow transitions"""
+        # Update NS light
+        if self.ns_light == "yellow":
+            self.ns_yellow_countdown -= 1
+            if self.ns_yellow_countdown <= 0:
+                self.ns_light = "red"
+                self.ns_yellow_countdown = 0
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.record_light_change()
-        else:  # EW green
-            if self.ns_light == "green":
-                self.ns_light = "yellow"
-                self.ns_yellow_countdown = 30
-                self.light_change_count += 1
+        
+        # Update EW light
+        if self.ew_light == "yellow":
+            self.ew_yellow_countdown -= 1
+            if self.ew_yellow_countdown <= 0:
+                self.ew_light = "red"
+                self.ew_yellow_countdown = 0
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_light_change()
+    
+    def set_traffic_lights(self, action):
+        """Set traffic lights based on action with yellow transitions"""
+        # Only change lights if they're not in yellow transition
+        if self.ns_light == "yellow" or self.ew_light == "yellow":
+            return
+            
+        if action == 0:  # NS green
+            if self.ns_light != "green":
+                # Start yellow transition for current green light
+                if self.ew_light == "green":
+                    self.ew_light = "yellow"
+                    self.ew_yellow_countdown = 3  # 3 ticks of yellow
+                # Set NS to green after yellow transition
+                self.ns_light = "green"
+                self.ns_yellow_countdown = 0
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.record_light_change()
+        
+        elif action == 1:  # EW green
+            if self.ew_light != "green":
+                # Start yellow transition for current green light
+                if self.ns_light == "green":
+                    self.ns_light = "yellow"
+                    self.ns_yellow_countdown = 3  # 3 ticks of yellow
+                # Set EW to green after yellow transition
+                self.ew_light = "green"
+                self.ew_yellow_countdown = 0
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.record_light_change()
     
     def handle_events(self):
-        """Handle pygame events"""
+        """Handle user input events"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.running = False
+                elif event.key == pygame.K_d:
+                    global DEBUG_MODE
+                    DEBUG_MODE = not DEBUG_MODE
+                elif event.key == pygame.K_s:
+                    global SLOW_MODE
+                    SLOW_MODE = not SLOW_MODE
+                elif event.key == pygame.K_e:
+                    if not self.episode_ended:
+                        self.episode_ended = True
+                        if hasattr(self, 'data_recorder'):
+                            self.data_recorder.end_episode(self.light_change_count)
+                elif event.key == pygame.K_n:
+                    if self.episode_ended:
+                        self.reset()
+                elif event.key == pygame.K_c and self.tutorial_mode:
+                    self.tutorial_step += 1
+                elif self.manual_mode:
+                    if event.key == pygame.K_SPACE:
+                        # Only change lights if they're not in yellow transition
+                        if self.ns_light != "yellow" and self.ew_light != "yellow":
+                            # Start yellow transition for current green light
+                            if self.ns_light == "green":
+                                self.ns_light = "yellow"
+                                self.ns_yellow_countdown = 3
+                            elif self.ew_light == "green":
+                                self.ew_light = "yellow"
+                                self.ew_yellow_countdown = 3
+                            # Set the other light to green
+                            if self.ns_light == "yellow":
+                                self.ew_light = "green"
+                            else:
+                                self.ns_light = "green"
+                            if hasattr(self, 'data_recorder'):
+                                self.data_recorder.record_light_change()
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     # Check if clicked on speed slider handle
@@ -188,63 +259,6 @@ class Simulation:
                     rel_x = x - TRAINING_SLIDER['x']
                     self.current_training_steps = int(TRAINING_SLIDER['min_steps'] + (rel_x / TRAINING_SLIDER['width']) * 
                                                   (TRAINING_SLIDER['max_steps'] - TRAINING_SLIDER['min_steps']))
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_d:  # Toggle debug mode
-                    global DEBUG_MODE
-                    DEBUG_MODE = not DEBUG_MODE
-                    print(f"Debug mode: {'ON' if DEBUG_MODE else 'OFF'}")
-                elif event.key == pygame.K_s:  # Toggle slow mode
-                    global SLOW_MODE
-                    SLOW_MODE = not SLOW_MODE
-                    print(f"Slow mode: {'ON' if SLOW_MODE else 'OFF'}")
-                elif event.key == pygame.K_e:  # End episode
-                    if not self.episode_ended:
-                        self.episode_ended = True
-                        print("Episode ended manually")
-                elif event.key == pygame.K_n:  # Start new episode
-                    if self.episode_ended:
-                        self.reset()
-                        print("Starting new episode")
-                elif event.key == pygame.K_t:  # Toggle training mode
-                    if not self.training_in_progress:
-                        self.training_in_progress = True
-                        self.rl_agent.total_timesteps = self.current_training_steps
-                        self.rl_agent.train()
-                        self.training_in_progress = False
-                        print(f"Training completed with {self.current_training_steps} steps")
-                elif event.key == pygame.K_m:  # Toggle manual mode
-                    if not self.training_in_progress:
-                        self.manual_mode = not self.manual_mode
-                        print(f"Manual mode: {'ON' if self.manual_mode else 'OFF'}")
-                elif event.key == pygame.K_SPACE and self.manual_mode:  # Toggle lights manually
-                    if self.ns_light == "green":
-                        self.ns_light = "yellow"
-                        self.ns_yellow_countdown = 30
-                    else:
-                        self.ew_light = "yellow"
-                        self.ew_yellow_countdown = 30
-                elif event.key == pygame.K_c and self.tutorial_mode:  # Continue tutorial
-                    self.tutorial_step += 1
-    
-    def update_traffic_lights(self):
-        """Update traffic light states"""
-        if self.ns_light == "yellow":
-            self.ns_yellow_countdown -= 1
-            if self.ns_yellow_countdown <= 0:
-                self.ns_light = "red"
-                self.ew_light = "green"
-                self.light_change_count += 1
-                if hasattr(self, 'data_recorder'):
-                    self.data_recorder.record_light_change()
-        
-        if self.ew_light == "yellow":
-            self.ew_yellow_countdown -= 1
-            if self.ew_yellow_countdown <= 0:
-                self.ew_light = "red"
-                self.ns_light = "green"
-                self.light_change_count += 1
-                if hasattr(self, 'data_recorder'):
-                    self.data_recorder.record_light_change()
     
     def update_vehicles(self):
         """Update all active vehicles with GPU acceleration"""
@@ -462,12 +476,6 @@ class Simulation:
         # Handle events
         self.handle_events()
         
-        # Update vehicles with GPU acceleration
-        self.update_vehicles()
-        
-        # Spawn new vehicles if needed
-        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
-        
         # Update traffic lights based on mode
         if self.simulation_mode == "RL":
             try:
@@ -492,8 +500,20 @@ class Simulation:
             else:
                 self.set_traffic_lights(1)  # EW green
         
+        # Update traffic light states
+        self.update_traffic_lights()
+        
+        # Spawn new vehicles if needed
+        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles)
+        
+        # Update vehicles with GPU acceleration
+        self.update_vehicles()
+        
         # Update current tick
         self.current_tick += 1
+        
+        # Get current traffic counts for visualization
+        traffic_counts = self.get_traffic_counts()
         
         # Draw everything
         self.draw(data_recorder)
@@ -517,14 +537,21 @@ class Simulation:
         
     def get_traffic_counts(self):
         """Get current traffic counts by direction"""
-        # Update counts based on waiting vehicles
-        waiting = self.get_waiting_vehicles()
-        self.traffic_counts = {
-            'north': waiting[0],
-            'south': waiting[1],
-            'east': waiting[2],
-            'west': waiting[3]
+        # Initialize counts
+        counts = {
+            'north': 0,
+            'south': 0,
+            'east': 0,
+            'west': 0
         }
+        
+        # Count vehicles in each direction
+        for vehicle in self.active_vehicles:
+            if vehicle.position in counts:
+                counts[vehicle.position] += 1
+        
+        # Update traffic counts
+        self.traffic_counts = counts
         return self.traffic_counts
     
     def set_mode(self, mode):
