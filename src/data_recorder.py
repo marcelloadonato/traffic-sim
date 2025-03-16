@@ -36,7 +36,7 @@ class DataRecorder:
             'final_satisfaction': vehicle.satisfaction
         })
         
-    def end_episode(self):
+    def end_episode(self, light_change_count):
         """End the current episode and calculate summary statistics"""
         if not self.episode_data:
             return
@@ -52,6 +52,7 @@ class DataRecorder:
             'avg_commute_time': avg_commute,
             'avg_satisfaction': avg_satisfaction,
             'total_vehicles': total_vehicles,
+            'light_changes': light_change_count,
             'reward': -0.1 * avg_commute + avg_satisfaction  # Example reward function
         })
         
@@ -112,7 +113,16 @@ class DataRecorder:
         plt.savefig('data/satisfaction_curve.png')
         plt.close()
         
-        # Combined plot with triple y-axes
+        plt.figure(figsize=(10, 6))
+        plt.plot(df['episode'], df['light_changes'], 'm-')
+        plt.title('Number of Light Changes per Episode')
+        plt.xlabel('Episode')
+        plt.ylabel('Light Changes')
+        plt.grid(True)
+        plt.savefig('data/light_changes_curve.png')
+        plt.close()
+        
+        # Combined plot with quadruple y-axes
         fig, ax1 = plt.subplots(figsize=(12, 8))
         
         # Primary y-axis (left) for reward (blue)
@@ -135,6 +145,14 @@ class DataRecorder:
         ln2 = ax3.plot(df['episode'], df['avg_satisfaction'], 'g-', label='Avg Satisfaction')
         ax3.tick_params(axis='y', labelcolor='g')
         
+        # Fourth y-axis (far right) for light changes (magenta)
+        ax4 = ax1.twinx()
+        # Offset the fourth axis
+        ax4.spines['right'].set_position(('outward', 120))
+        ax4.set_ylabel('Light Changes', color='m')
+        ln3 = ax4.plot(df['episode'], df['light_changes'], 'm-', label='Light Changes')
+        ax4.tick_params(axis='y', labelcolor='m')
+        
         # Set satisfaction y-axis limits to 0-10
         ax3.set_ylim(0, 10)
         
@@ -143,7 +161,7 @@ class DataRecorder:
         ax1.grid(True)
         
         # Combine legends from all axes
-        lns = [ax1.get_lines()[0]] + ln1 + ln2
+        lns = [ax1.get_lines()[0]] + ln1 + ln2 + ln3
         labs = [l.get_label() for l in lns]
         ax1.legend(lns, labs, loc='upper right')
         

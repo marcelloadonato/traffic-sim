@@ -72,6 +72,7 @@ class Simulation:
         self.current_tick = 0
         self.running = True
         self.episode_ended = False
+        self.light_change_count = 0  # Track number of light changes per episode
     
     def set_data_recorder(self, data_recorder):
         """Set the data recorder for the simulation"""
@@ -104,10 +105,12 @@ class Simulation:
             if self.ew_light == "green":
                 self.ew_light = "yellow"
                 self.ew_yellow_countdown = 30
+                self.light_change_count += 1
         else:  # EW green
             if self.ns_light == "green":
                 self.ns_light = "yellow"
                 self.ns_yellow_countdown = 30
+                self.light_change_count += 1
     
     def handle_events(self):
         """Handle pygame events"""
@@ -170,12 +173,14 @@ class Simulation:
             if self.ns_yellow_countdown <= 0:
                 self.ns_light = "red"
                 self.ew_light = "green"
+                self.light_change_count += 1
         
         if self.ew_light == "yellow":
             self.ew_yellow_countdown -= 1
             if self.ew_yellow_countdown <= 0:
                 self.ew_light = "red"
                 self.ns_light = "green"
+                self.light_change_count += 1
     
     def update_vehicles(self):
         """Update all active vehicles"""
@@ -290,7 +295,7 @@ class Simulation:
             # Check if episode should end
             if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
                 if hasattr(self, 'data_recorder'):
-                    self.data_recorder.end_episode()
+                    self.data_recorder.end_episode(self.light_change_count)
                     self.data_recorder.plot_learning_curve()
                 self.episode_ended = True
                 print("Episode ended automatically")
@@ -325,7 +330,7 @@ class Simulation:
             # Check if episode should end
             if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
                 # End episode
-                data_recorder.end_episode()
+                data_recorder.end_episode(self.light_change_count)
                 data_recorder.plot_learning_curve()
                 self.episode_ended = True
                 print("Episode ended automatically")
