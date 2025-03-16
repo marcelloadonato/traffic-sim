@@ -1,19 +1,66 @@
 import sys
 import pygame
+import threading
+import time
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QThread, pyqtSignal
 from src.config import WIDTH, HEIGHT, WHITE, DEBUG_MODE, SLOW_MODE
 from src.simulation import Simulation
 from src.data_recorder import DataRecorder
 from src.shared import PygameContext
 from src.ui.main_window import MainWindow
 
-def main():
-    # Initialize PyQt application
-    app = QApplication(sys.argv)
+class SimulationThread(QThread):
+    """Thread for running the Pygame simulation"""
+    metrics_updated = pyqtSignal(dict)
+    traffic_updated = pyqtSignal(dict)
     
-    # Initialize pygame context
-    pygame_context = PygameContext.init(WIDTH, HEIGHT)
+    def __init__(self, simulation, data_recorder):
+        super().__init__()
+        self.simulation = simulation
+        self.data_recorder = data_recorder
+        self.running = True
+        
+    def run(self):
+        # Initialize pygame in this thread
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Traffic Simulation")
+        clock = pygame.time.Clock()
+        
+        while self.running:
+            # Handle events in this thread
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+            
+            # Step the simulation
+            self.simulation.step(self.data_recorder)
+            
+            # Get metrics for PyQt window
+            metrics = self.simulation.get_metrics()
+            self.metrics_updated.emit(metrics)
+            
+            # Get traffic counts for PyQt window
+            traffic_counts = self.simulation.get_traffic_counts()
+            self.traffic_updated.emit(traffic_counts)
+            
+            # Update the game window
+            pygame.display.flip()
+            
+            # Control frame rate
+            clock.tick(60)
+        
+        # Cleanup when thread finishes
+        pygame.quit()
+    
+    def stop(self):
+        self.running = False
+        self.wait()
+
+def main():
+    # Initialize PyQt application first
+    app = QApplication(sys.argv)
     
     # Create simulation and data recorder
     simulation = Simulation()
@@ -22,45 +69,30 @@ def main():
     # Connect data recorder to simulation
     simulation.set_data_recorder(data_recorder)
     
-    # Create and show the control window
-    control_window = MainWindow(simulation)
-    control_window.show()
+    # Create the control window
+    main_window = MainWindow(simulation)
     
-    # Connect the RL agent's signals to the visualization panel
-    control_window.rl_agent.traffic_update.connect(
-        control_window.visualization_panel.update_traffic_plot
-    )
-    control_window.rl_agent.reward_update.connect(
-        control_window.visualization_panel.update_reward_plot
-    )
+    # Create and start the simulation thread
+    sim_thread = SimulationThread(simulation, data_recorder)
     
-    # Create a timer for updating the simulation
-    def update_simulation():
-        if simulation.running:
-            try:
-                # Step the simulation
-                simulation.step(data_recorder)
-                
-                # Update the game window
-                pygame.display.flip()
-                
-                # Control frame rate
-                pygame.time.Clock().tick(60)
-            except Exception as e:
-                print(f"Error in simulation step: {str(e)}")
-                simulation.running = False
-        else:
-            # Stop the timer when simulation ends
-            timer.stop()
-            app.quit()
+    # Connect signals from simulation thread to main window
+    sim_thread.metrics_updated.connect(main_window.metrics_panel.update_metrics)
+    sim_thread.traffic_updated.connect(main_window.visualization_panel.update_traffic_plot)
     
-    # Create and start the timer
-    timer = QTimer()
-    timer.timeout.connect(update_simulation)
-    timer.start(16)  # Update every 16ms (approximately 60 FPS)
+    # Show the main window
+    main_window.show()
+    main_window.raise_()
     
-    # Start the PyQt event loop
-    sys.exit(app.exec_())
+    # Start the simulation thread
+    sim_thread.start()
+    
+    # Run the PyQt event loop
+    exit_code = app.exec_()
+    
+    # Clean up when application exits
+    sim_thread.stop()
+    
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
     main() 

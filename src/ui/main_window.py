@@ -13,25 +13,39 @@ class MainWindow(QMainWindow):
         self.init_ui()
         
     def init_ui(self):
-        self.setWindowTitle('Traffic Light Control System')
-        self.setGeometry(100, 100, 1600, 800)  # Increased width to accommodate metrics panel
+        """Initialize user interface components"""
+        # Set window properties
+        self.setWindowTitle('Traffic Control Dashboard')
+        self.setGeometry(100, 100, 1200, 800)  # Start with reasonable size
+        self.setMinimumSize(1000, 600)  # Set minimum size to ensure content is visible
         
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QHBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setSpacing(10)  # Add some spacing between panels
+        main_layout.setContentsMargins(10, 10, 10, 10)  # Add margins around panels
         
-        # Create and add control panel
+        # Create and add panels
+        # 1. Control Panel - Left side
         self.control_panel = ControlPanel()
-        layout.addWidget(self.control_panel)
+        self.control_panel.setMinimumWidth(250)
+        main_layout.addWidget(self.control_panel)
         
-        # Create and add visualization panel
+        # 2. Visualization Panel - Middle
         self.visualization_panel = VisualizationPanel()
-        layout.addWidget(self.visualization_panel)
+        self.visualization_panel.setMinimumWidth(400)
+        main_layout.addWidget(self.visualization_panel)
         
-        # Create and add metrics panel
+        # 3. Metrics Panel - Right side
         self.metrics_panel = MetricsPanel()
-        layout.addWidget(self.metrics_panel)
+        self.metrics_panel.setMinimumWidth(300)
+        main_layout.addWidget(self.metrics_panel)
+        
+        # Set stretch factors to control relative sizes
+        main_layout.setStretchFactor(self.control_panel, 1)
+        main_layout.setStretchFactor(self.visualization_panel, 2)
+        main_layout.setStretchFactor(self.metrics_panel, 1)
         
         # Connect signals
         self.control_panel.learning_rate_changed.connect(self.update_learning_rate)
@@ -63,6 +77,9 @@ class MainWindow(QMainWindow):
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_simulation_display)
         self.update_timer.start(100)  # Update every 100ms
+        
+        # Note: We don't call show() or raise_() here because it's handled in main.py
+        # This allows the window to be shown at the appropriate time
         
     def update_simulation_display(self):
         """Update UI elements with current simulation state"""

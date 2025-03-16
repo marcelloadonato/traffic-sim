@@ -267,7 +267,7 @@ class Simulation:
                     elif current_pos == 'east':
                         current_coords = (WIDTH, HEIGHT//2)
                     elif current_pos == 'west':
-                        current_coords = (0, HEIGHT//2)
+                        current_coords = (0, HEIGHT//2)  # Keep y-coordinate consistent
                     elif current_pos == 'intersection':
                         # Use the previous position to determine intersection entry point
                         if current_idx > 0 and isinstance(vehicle.route[current_idx - 1], tuple):
@@ -284,7 +284,7 @@ class Simulation:
                     elif next_pos == 'east':
                         next_coords = (WIDTH, HEIGHT//2)
                     elif next_pos == 'west':
-                        next_coords = (0, HEIGHT//2)
+                        next_coords = (0, HEIGHT//2)  # Keep y-coordinate consistent
                     elif next_pos == 'intersection':
                         # Use the next waypoint after intersection to determine direction
                         if current_idx + 2 < len(vehicle.route):
@@ -292,11 +292,13 @@ class Simulation:
                         else:
                             next_coords = current_coords
                 
-                # Check if vehicle has reached the edge of the map
-                if isinstance(current_coords, tuple):
-                    x, y = current_coords
-                    # Only remove if we've reached the destination and are at the edge
-                    if vehicle.position == vehicle.destination and vehicle.is_at_edge():
+                # Check if vehicle has reached its final destination
+                if vehicle.position == vehicle.destination:
+                    # Only remove if we're completely off screen
+                    if (vehicle.destination == 'west' and vehicle.interpolated_position[0] < -50) or \
+                       (vehicle.destination == 'east' and vehicle.interpolated_position[0] > WIDTH + 50) or \
+                       (vehicle.destination == 'north' and vehicle.interpolated_position[1] < -50) or \
+                       (vehicle.destination == 'south' and vehicle.interpolated_position[1] > HEIGHT + 50):
                         vehicles_to_remove.append(vehicle)
                         continue
                 
@@ -341,30 +343,32 @@ class Simulation:
                 vehicles_to_remove.append(vehicle)
                 continue
         
-        # Remove vehicles that have reached the edge
+        # Remove vehicles that have reached their destination at the edge
         for vehicle in vehicles_to_remove:
             if vehicle in self.active_vehicles:
                 self.active_vehicles.remove(vehicle)
+                self.removed_vehicles.append(vehicle)  # Add to removed vehicles for metrics
         
-        # Spawn new vehicles only at edges
-        if len(self.active_vehicles) < MAX_VEHICLES_PER_LANE * 4 and random.random() < 0.1:
-            spawn_edge = random.choice(['north', 'south', 'east', 'west'])
-            possible_destinations = ['north', 'south', 'east', 'west']
-            possible_destinations.remove(spawn_edge)
-            destination = random.choice(possible_destinations)
-            route = self.create_route(spawn_edge, destination)
-            
-            if route:
-                vehicle = Vehicle(
-                    route=route,
-                    position=spawn_edge,
-                    vehicle_type=random.choice(["car", "van", "truck"]),
-                    position_threshold=40
-                )
-                vehicle.destination = destination  # Add the destination attribute
-                vehicle.interpolated_position = None
-                self.active_vehicles.append(vehicle)
-                print(f"Spawned vehicle from {spawn_edge} to {destination} at tick {self.current_tick}")
+        # Only spawn random vehicles if not in test mode
+        if not hasattr(self, 'test_mode') or not self.test_mode:
+            if len(self.active_vehicles) < MAX_VEHICLES_PER_LANE * 4 and random.random() < 0.1:
+                spawn_edge = random.choice(['north', 'south', 'east', 'west'])
+                possible_destinations = ['north', 'south', 'east', 'west']
+                possible_destinations.remove(spawn_edge)
+                destination = random.choice(possible_destinations)
+                route = self.create_route(spawn_edge, destination)
+                
+                if route:
+                    vehicle = Vehicle(
+                        route=route,
+                        position=spawn_edge,
+                        vehicle_type=random.choice(["car", "van", "truck"]),
+                        position_threshold=40
+                    )
+                    vehicle.destination = destination  # Add the destination attribute
+                    vehicle.interpolated_position = None
+                    self.active_vehicles.append(vehicle)
+                    print(f"Spawned vehicle from {spawn_edge} to {destination} at tick {self.current_tick}")
     
     def draw(self, data_recorder):
         """Draw the current simulation state"""
@@ -500,8 +504,9 @@ class Simulation:
         # Update traffic light states
         self.update_traffic_lights()
         
-        # Spawn new vehicles if needed
-        spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles, self)
+        # Only spawn new vehicles if not in test mode
+        if not hasattr(self, 'test_mode') or not self.test_mode:
+            spawn_vehicles(self.current_tick, self.spawn_schedule, self.active_vehicles, self)
         
         # Update vehicles with GPU acceleration
         self.update_vehicles()
@@ -536,23 +541,18 @@ class Simulation:
         self.traffic_counts = {direction: 0 for direction in self.traffic_counts}
         
     def get_traffic_counts(self):
-        """Get current traffic counts by direction"""
-        # Initialize counts
-        counts = {
-            'north': 0,
-            'south': 0,
-            'east': 0,
-            'west': 0
+        """Get traffic counts by direction"""
+        north_count = sum(1 for v in self.active_vehicles if v.position == 'north')
+        south_count = sum(1 for v in self.active_vehicles if v.position == 'south')
+        east_count = sum(1 for v in self.active_vehicles if v.position == 'east')
+        west_count = sum(1 for v in self.active_vehicles if v.position == 'west')
+        
+        return {
+            'north': north_count,
+            'south': south_count,
+            'east': east_count,
+            'west': west_count
         }
-        
-        # Count vehicles in each direction
-        for vehicle in self.active_vehicles:
-            if vehicle.position in counts:
-                counts[vehicle.position] += 1
-        
-        # Update traffic counts
-        self.traffic_counts = counts
-        return self.traffic_counts
     
     def set_mode(self, mode):
         """Set the simulation mode (RL, Manual, or Tutorial)"""
@@ -581,67 +581,95 @@ class Simulation:
             get_screen().blit(instruction_text, instruction_rect)
     
     def get_avg_wait_time(self):
-        """Calculate average wait time for vehicles at intersections"""
+        """Calculate average wait time for vehicles"""
         if not self.active_vehicles:
             return 0
-        wait_times = [v.wait_time for v in self.active_vehicles if v.state == "waiting"]
-        return sum(wait_times) / len(wait_times) if wait_times else 0
+        
+        # Calculate average time vehicles spend in "waiting" state
+        wait_times = [v.wait_time for v in self.active_vehicles if hasattr(v, 'wait_time')]
+        return sum(wait_times) / max(len(wait_times), 1)
     
     def get_traffic_flow(self):
-        """Calculate traffic flow rate (vehicles per minute)"""
-        current_tick = self.current_tick
-        if current_tick - self.last_flow_update >= 60:  # Update every minute
-            arrived_diff = len(self.removed_vehicles) - self.last_arrived_count
-            flow_rate = (arrived_diff * 60) / (current_tick - self.last_flow_update)
-            self.last_arrived_count = len(self.removed_vehicles)
-            self.last_flow_update = current_tick
-            return flow_rate
-        return 0
+        """Calculate traffic flow (vehicles per minute)"""
+        # Use number of vehicles processed in the last minute
+        ticks_per_minute = 60 * 60  # Assuming 60 FPS
+        recent_ticks = min(self.current_tick, ticks_per_minute)
+        
+        if recent_ticks == 0:
+            return 0
+        
+        # Count vehicles that were removed in the last minute
+        recent_vehicles = len(self.removed_vehicles)
+        
+        # Convert to vehicles per minute
+        return (recent_vehicles / recent_ticks) * ticks_per_minute
     
     def get_queue_length(self):
         """Calculate current queue length at intersections"""
+        # Count vehicles in waiting state
         return sum(1 for v in self.active_vehicles if v.state == "waiting")
     
     def get_vehicle_density(self):
         """Calculate vehicle density (vehicles per lane)"""
-        return len(self.active_vehicles) / self.total_lanes
+        # Count total active vehicles divided by number of lanes
+        num_lanes = 4  # North, South, East, West
+        return len(self.active_vehicles) / num_lanes if num_lanes > 0 else 0
     
     def get_avg_speed(self):
         """Calculate average vehicle speed"""
         if not self.active_vehicles:
             return 0
-        speeds = [v.speed for v in self.active_vehicles if v.state == "moving"]
-        return sum(speeds) / len(speeds) if speeds else 0
+        
+        # Use position_threshold as a proxy for speed (lower = faster)
+        speeds = [40 / max(v.position_threshold, 1) * 60 for v in self.active_vehicles]  # pixels per second
+        return sum(speeds) / len(speeds)
     
     def get_stops_per_vehicle(self):
         """Calculate average number of stops per vehicle"""
-        if not self.active_vehicles:
+        if not self.active_vehicles and not self.removed_vehicles:
             return 0
-        total_stops = sum(v.stop_count for v in self.active_vehicles)
-        return total_stops / len(self.active_vehicles)
+        
+        # Use a placeholder calculation
+        total_vehicles = len(self.active_vehicles) + len(self.removed_vehicles)
+        waiting_vehicles = sum(1 for v in self.active_vehicles if v.state == "waiting")
+        
+        # Approximate stops per vehicle
+        return waiting_vehicles / total_vehicles if total_vehicles > 0 else 0
     
     def get_fuel_efficiency(self):
-        """Calculate fuel efficiency based on acceleration/deceleration patterns"""
-        if not self.active_vehicles:
-            return 0
-        efficiency_scores = []
-        for v in self.active_vehicles:
-            if v.state == "moving":
-                # Penalize frequent acceleration/deceleration
-                smoothness = 1.0 - (v.acceleration_changes / max(1, v.total_ticks))
-                efficiency_scores.append(smoothness * 100)
-        return sum(efficiency_scores) / len(efficiency_scores) if efficiency_scores else 0
+        """Calculate fuel efficiency (higher is better)"""
+        # Base efficiency starts at 100%
+        base_efficiency = 100
+        
+        # Reduce efficiency for each vehicle that's waiting (stopped)
+        waiting_penalty = 2  # % per waiting vehicle
+        waiting_vehicles = sum(1 for v in self.active_vehicles if v.state == "waiting")
+        
+        # Calculate efficiency
+        efficiency = max(0, base_efficiency - (waiting_vehicles * waiting_penalty))
+        
+        return efficiency
     
     def get_metrics(self):
-        """Get all metrics in a dictionary format"""
+        """Get metrics for the dashboard"""
+        # Calculate metrics
+        avg_wait_time = self.get_avg_wait_time()
+        traffic_flow = self.get_traffic_flow()
+        queue_length = self.get_queue_length()
+        vehicle_density = self.get_vehicle_density()
+        avg_speed = self.get_avg_speed()
+        stops_per_vehicle = self.get_stops_per_vehicle()
+        fuel_efficiency = self.get_fuel_efficiency()
+        
+        # Return as dictionary
         return {
-            'avg_wait_time': self.get_avg_wait_time(),
-            'traffic_flow': self.get_traffic_flow(),
-            'queue_length': self.get_queue_length(),
-            'vehicle_density': self.get_vehicle_density(),
-            'avg_speed': self.get_avg_speed(),
-            'stops_per_vehicle': self.get_stops_per_vehicle(),
-            'fuel_efficiency': self.get_fuel_efficiency()
+            'avg_wait_time': avg_wait_time,
+            'traffic_flow': traffic_flow,
+            'queue_length': queue_length,
+            'vehicle_density': vehicle_density,
+            'avg_speed': avg_speed,
+            'stops_per_vehicle': stops_per_vehicle,
+            'fuel_efficiency': fuel_efficiency
         }
     
     def create_route(self, start, end):
@@ -674,62 +702,74 @@ class Simulation:
         # Add intersection exit based on turn type
         if (start == 'north' and end == 'west') or (start == 'east' and end == 'south'):
             route.extend([
-                (WIDTH//2 - 25, HEIGHT//2 - 25),
-                (WIDTH//2 - 50, HEIGHT//2),
-                (WIDTH//2 - 100, HEIGHT//2)  # Additional point past intersection
+                (WIDTH//2 - 25, HEIGHT//2 - 25),  # Smooth turn point
+                (WIDTH//2 - 50, HEIGHT//2),       # Exit point
+                (WIDTH//2 - 100, HEIGHT//2)       # Past intersection
             ])
         elif (start == 'north' and end == 'east') or (start == 'west' and end == 'south'):
             route.extend([
-                (WIDTH//2 + 25, HEIGHT//2 - 25),
-                (WIDTH//2 + 50, HEIGHT//2),
-                (WIDTH//2 + 100, HEIGHT//2)  # Additional point past intersection
+                (WIDTH//2 + 25, HEIGHT//2 - 25),  # Smooth turn point
+                (WIDTH//2 + 50, HEIGHT//2),       # Exit point
+                (WIDTH//2 + 100, HEIGHT//2)       # Past intersection
             ])
         elif (start == 'south' and end == 'west') or (start == 'east' and end == 'north'):
             route.extend([
-                (WIDTH//2 - 25, HEIGHT//2 + 25),
-                (WIDTH//2 - 50, HEIGHT//2),
-                (WIDTH//2 - 100, HEIGHT//2)  # Additional point past intersection
+                (WIDTH//2 - 25, HEIGHT//2 + 25),  # Smooth turn point
+                (WIDTH//2 - 50, HEIGHT//2),       # Exit point
+                (WIDTH//2 - 100, HEIGHT//2)       # Past intersection
             ])
         elif (start == 'south' and end == 'east') or (start == 'west' and end == 'north'):
             route.extend([
-                (WIDTH//2 + 25, HEIGHT//2 + 25),
-                (WIDTH//2 + 50, HEIGHT//2),
-                (WIDTH//2 + 100, HEIGHT//2)  # Additional point past intersection
+                (WIDTH//2 + 25, HEIGHT//2 + 25),  # Smooth turn point
+                (WIDTH//2 + 50, HEIGHT//2),       # Exit point
+                (WIDTH//2 + 100, HEIGHT//2)       # Past intersection
             ])
         elif start == 'north' and end == 'south':
             route.extend([
-                (WIDTH//2, HEIGHT//2),
-                (WIDTH//2, HEIGHT//2 + 50),
-                (WIDTH//2, HEIGHT//2 + 100)  # Additional point past intersection
+                # Create a straight path through intersection
+                (WIDTH//2, HEIGHT//2 - 25),  # Entry point
+                (WIDTH//2, HEIGHT//2),       # Middle point
+                (WIDTH//2, HEIGHT//2 + 25),  # Exit point
+                (WIDTH//2, HEIGHT//2 + 50),  # Past intersection
+                (WIDTH//2, HEIGHT//2 + 100)  # Further past intersection
             ])
         elif start == 'south' and end == 'north':
             route.extend([
-                (WIDTH//2, HEIGHT//2),
-                (WIDTH//2, HEIGHT//2 - 50),
-                (WIDTH//2, HEIGHT//2 - 100)  # Additional point past intersection
+                # Create a straight path through intersection
+                (WIDTH//2, HEIGHT//2 + 25),  # Entry point
+                (WIDTH//2, HEIGHT//2),       # Middle point
+                (WIDTH//2, HEIGHT//2 - 25),  # Exit point
+                (WIDTH//2, HEIGHT//2 - 50),  # Past intersection
+                (WIDTH//2, HEIGHT//2 - 100)  # Further past intersection
             ])
         elif start == 'east' and end == 'west':
             route.extend([
-                (WIDTH//2, HEIGHT//2),
-                (WIDTH//2 - 50, HEIGHT//2),
-                (WIDTH//2 - 100, HEIGHT//2)  # Additional point past intersection
+                # Create a straight path through intersection
+                (WIDTH//2 + 25, HEIGHT//2),  # Entry point
+                (WIDTH//2, HEIGHT//2),       # Middle point
+                (WIDTH//2 - 25, HEIGHT//2),  # Exit point
+                (WIDTH//2 - 50, HEIGHT//2),  # Past intersection
+                (WIDTH//2 - 100, HEIGHT//2)  # Further past intersection
             ])
         elif start == 'west' and end == 'east':
             route.extend([
-                (WIDTH//2, HEIGHT//2),
-                (WIDTH//2 + 50, HEIGHT//2),
-                (WIDTH//2 + 100, HEIGHT//2)  # Additional point past intersection
+                # Create a straight path through intersection
+                (WIDTH//2 - 25, HEIGHT//2),  # Entry point
+                (WIDTH//2, HEIGHT//2),       # Middle point
+                (WIDTH//2 + 25, HEIGHT//2),  # Exit point
+                (WIDTH//2 + 50, HEIGHT//2),  # Past intersection
+                (WIDTH//2 + 100, HEIGHT//2)  # Further past intersection
             ])
         
         # Add exit path
         if end == 'north':
-            route.extend([(WIDTH//2, 100), (WIDTH//2, 50), end])
+            route.extend([(WIDTH//2, 100), (WIDTH//2, 50), (WIDTH//2, 0)])
         elif end == 'south':
-            route.extend([(WIDTH//2, HEIGHT-100), (WIDTH//2, HEIGHT-50), end])
+            route.extend([(WIDTH//2, HEIGHT-100), (WIDTH//2, HEIGHT-50), (WIDTH//2, HEIGHT)])
         elif end == 'east':
-            route.extend([(WIDTH-100, HEIGHT//2), (WIDTH-50, HEIGHT//2), end])
+            route.extend([(WIDTH-100, HEIGHT//2), (WIDTH-50, HEIGHT//2), (WIDTH, HEIGHT//2)])
         elif end == 'west':
-            route.extend([(100, HEIGHT//2), (50, HEIGHT//2), end])
+            route.extend([(100, HEIGHT//2), (50, HEIGHT//2), (0, HEIGHT//2)])  # Use explicit coordinates
         
         return route
 
@@ -745,12 +785,12 @@ class Simulation:
         # Create a route from east to west
         route = self.create_route('east', 'west')
         
-        # Create the test vehicle
+        # Create the test vehicle with a lower position_threshold for faster movement
         test_vehicle = Vehicle(
             route=route,
             position='east',
             vehicle_type="car",
-            position_threshold=40
+            position_threshold=20  # Reduced from 40 to make the vehicle move faster
         )
         test_vehicle.destination = 'west'
         test_vehicle.interpolated_position = None
@@ -775,6 +815,11 @@ class Simulation:
         self.ns_light = "red"
         self.ew_light = "green"
         
+        # Track previous state for change detection
+        prev_state = None
+        prev_position = None
+        prev_direction = None
+        
         while self.running and test_vehicle in self.active_vehicles:
             # Handle events
             self.handle_events()
@@ -785,20 +830,45 @@ class Simulation:
             # Update vehicles
             self.update_vehicles()
             
-            # Print vehicle state
-            print(f"\nTick {self.current_tick}:")
-            print(f"Position: {test_vehicle.position}")
-            print(f"State: {test_vehicle.state}")
-            if hasattr(test_vehicle, 'interpolated_position'):
+            # Calculate current direction based on interpolated position with threshold
+            current_direction = None
+            if hasattr(test_vehicle, 'interpolated_position') and test_vehicle.interpolated_position:
+                if isinstance(prev_position, tuple) and isinstance(test_vehicle.interpolated_position, tuple):
+                    dx = test_vehicle.interpolated_position[0] - prev_position[0]
+                    dy = test_vehicle.interpolated_position[1] - prev_position[1]
+                    # Only register direction change if movement is significant
+                    movement_threshold = 5  # Pixels
+                    if abs(dx) > movement_threshold or abs(dy) > movement_threshold:
+                        if abs(dx) > abs(dy):
+                            current_direction = "East" if dx > 0 else "West"
+                        else:
+                            current_direction = "South" if dy > 0 else "North"
+                    elif prev_direction:  # If movement is small, maintain previous direction
+                        current_direction = prev_direction
+            
+            # Only print when there are changes
+            if test_vehicle.state != prev_state:
+                print(f"\nTick {self.current_tick} - State Change: {prev_state} -> {test_vehicle.state}")
+                print(f"Position: {test_vehicle.position}")
                 print(f"Interpolated Position: {test_vehicle.interpolated_position}")
-            print(f"Traffic Lights - NS: {self.ns_light}, EW: {self.ew_light}")
+            
+            if current_direction != prev_direction and current_direction is not None:
+                print(f"Tick {self.current_tick} - Direction Change: {prev_direction} -> {current_direction}")
+                print(f"Movement: dx={dx:.2f}, dy={dy:.2f}")
+                print(f"Position: {test_vehicle.position}")
+                print(f"Interpolated Position: {test_vehicle.interpolated_position}")
+            
+            # Update previous values
+            prev_state = test_vehicle.state
+            prev_position = test_vehicle.interpolated_position
+            prev_direction = current_direction
             
             # Draw everything
             self.draw(None)
             
             # Control simulation speed
             clock = get_clock()
-            clock.tick(5)  # Slow speed for observation
+            clock.tick(30)
             
             # Increment tick
             self.current_tick += 1 

@@ -247,58 +247,55 @@ def check_collision(vehicle, other_vehicles, light_state):
     for other in other_vehicles:
         if other == vehicle:
             continue
-            
-        # Get other vehicle position
+        
+        # Get other vehicle's position
         other_x, other_y = get_vehicle_position(other)
         
         # Calculate distance between vehicles
         distance = math.sqrt((x - other_x)**2 + (y - other_y)**2)
         
-        # Adjust minimum distance based on vehicle types and positions
-        min_distance = 40  # Base minimum distance
+        # Check for collision based on vehicle types and positions
+        collision_threshold = 30  # Base collision threshold
         
-        # Increase minimum distance for larger vehicles
+        # Adjust threshold based on vehicle types
         if vehicle.vehicle_type == "truck" or other.vehicle_type == "truck":
-            min_distance *= 1.5
+            collision_threshold += 10
         elif vehicle.vehicle_type == "van" or other.vehicle_type == "van":
-            min_distance *= 1.2
+            collision_threshold += 5
+        
+        # Only check for collisions if:
+        # 1. Both vehicles are in the same lane or intersection
+        # 2. The other vehicle is ahead of this vehicle
+        # 3. The distance is less than the collision threshold
+        if distance < collision_threshold:
+            # Check if vehicles are in the same lane or one is in intersection
+            same_lane = (vehicle.position == other.position or 
+                        is_at_intersection or 
+                        other.position == 'intersection')
             
-        # Increase minimum distance at intersection
-        if is_at_intersection or other.position == 'intersection':
-            min_distance *= 1.2
+            # Check if other vehicle is ahead
+            is_ahead = False
+            if vehicle.position in ['north', 'south']:
+                is_ahead = (vehicle.position == 'north' and y > other_y) or \
+                          (vehicle.position == 'south' and y < other_y)
+            elif vehicle.position in ['east', 'west']:
+                is_ahead = (vehicle.position == 'east' and x < other_x) or \
+                          (vehicle.position == 'west' and x > other_x)
+            elif is_at_intersection:
+                # In intersection, check based on route waypoints
+                next_waypoint = None
+                for pos in vehicle.route[route_idx+1:]:
+                    if isinstance(pos, tuple):
+                        next_waypoint = pos
+                        break
+                if next_waypoint:
+                    dx = next_waypoint[0] - x
+                    dy = next_waypoint[1] - y
+                    is_ahead = (abs(dx) < collision_threshold and abs(dy) < collision_threshold)
             
-        # Increase minimum distance when approaching intersection
-        if is_approaching and next_pos == 'intersection':
-            min_distance *= 1.3
-            
-        # Check if vehicles are too close
-        if distance < min_distance:
-            # Only stop if other vehicle is in front
-            # For vehicles in the same direction
-            if vehicle.position == other.position:
-                if ((vehicle.position in ['north', 'south'] and other_y < y) or
-                    (vehicle.position in ['east', 'west'] and other_x < x)):
-                    vehicle.stopped_for_collision = True
-                    return True
-            # For vehicles at intersection
-            elif is_at_intersection or other.position == 'intersection':
-                # Calculate angle between vehicles
-                angle = math.degrees(math.atan2(other_y - y, other_x - x))
-                # Only stop if other vehicle is in front (within 90 degrees)
-                if abs(angle) < 90:
-                    vehicle.stopped_for_collision = True
-                    return True
-                    
-        # Special case: prevent gridlock at intersection
-        if is_at_intersection and other.position == 'intersection':
-            # If both vehicles have been at intersection for too long
-            if (vehicle.position_time > vehicle.position_threshold * 1.5 and
-                other.position_time > other.position_threshold * 1.5):
-                # Let one vehicle through (based on arbitrary condition)
-                if vehicle.commute_time > other.commute_time:
-                    vehicle.stopped_for_collision = True
-                    return True
+            if same_lane and is_ahead:
+                vehicle.stopped_for_collision = True
+                return True
     
-    # No collision detected
     vehicle.stopped_for_collision = False
     return False 

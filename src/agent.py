@@ -2,7 +2,7 @@ import random
 from src.config import LANES, INTERMEDIATE_POSITIONS, WIDTH, HEIGHT
 
 class Vehicle:
-    def __init__(self, route, position, vehicle_type="car", position_threshold=20):
+    def __init__(self, route, position, vehicle_type="car", position_threshold=40):
         self.route = route
         self.position = position  # Starting position (edge of map)
         self.vehicle_type = vehicle_type
@@ -20,11 +20,11 @@ class Vehicle:
         
         # Animation and display properties
         self.interpolated_position = None  # For smooth movement between positions
-        self.color = None
+        self.color = (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200))
         self.size_multiplier = 1.0 if vehicle_type == "car" else 1.5 if vehicle_type == "truck" else 1.2
         
         # Performance metrics
-        self.speed = 15  # Reduced base speed
+        self.speed = 1.0
         self.base_speed = 15  # Reduced base speed
         self.last_speed = 15  # Reduced base speed
         self.wait_time = 0
