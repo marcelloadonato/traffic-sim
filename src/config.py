@@ -8,11 +8,11 @@ SLOW_FPS = 10
 
 # Speed slider settings
 SPEED_SLIDER = {
-    'x': 10,
-    'y': HEIGHT - 40,
-    'width': 200,
+    'x': 100,
+    'y': HEIGHT - 30,
+    'width': WIDTH - 200,
     'height': 10,
-    'min_fps': 5,
+    'min_fps': 1,
     'max_fps': 60,
     'default_fps': 30,
     'handle_radius': 8,
@@ -20,6 +20,17 @@ SPEED_SLIDER = {
     'handle': (100, 100, 100),
     'active_handle': (50, 50, 50),
     'label_color': (0, 0, 0)
+}
+
+# Training steps slider configuration
+TRAINING_SLIDER = {
+    'x': 100,
+    'y': HEIGHT - 60,
+    'width': WIDTH - 200,
+    'height': 10,
+    'min_steps': 100,
+    'max_steps': 20000,
+    'default_steps': 2000
 }
 
 # Colors

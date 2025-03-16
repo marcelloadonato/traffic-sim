@@ -2,6 +2,7 @@
 import gym
 import numpy as np
 from gym import spaces
+from src.config import TOTAL_VEHICLES  # Fix import path
 
 class TrafficEnv(gym.Env):
     """
@@ -60,40 +61,33 @@ class TrafficEnv(gym.Env):
             done (bool): Whether the episode is done
             info (dict): Additional information
         """
-        # Apply the action to the simulation
         if self.simulation:
+            # Apply action and update simulation
             self.simulation.set_traffic_lights(action)
+            self.simulation.update_simulation()
             
-            # Run simulation for a few ticks to see the effect
-            for _ in range(10):  # Run for 10 ticks
-                self.simulation.update_simulation()
-        
-        # Increment step counter
-        self.current_step += 1
-        
-        # Get new observation
-        observation = self._get_observation()
-        
-        # Calculate reward
-        reward = self._calculate_reward()
-        self.total_reward += reward
-        
-        # Check if episode is done
-        done = self.current_step >= self.max_steps
-        
-        # If episode is done, record the total reward
-        if done and self.simulation:
-            self.episode_rewards.append(self.total_reward)
+            # Calculate reward with stronger penalty for incomplete journeys
+            avg_commute = self.simulation.get_avg_commute_time()
+            avg_satisfaction = self.simulation.get_avg_satisfaction()
             
-        # Additional info
-        info = {
-            'step': self.current_step,
-            'waiting_vehicles': sum(observation),
-            'avg_satisfaction': self.simulation.get_avg_satisfaction() if self.simulation else 0,
-            'avg_commute_time': self.simulation.get_avg_commute_time() if self.simulation else 0
-        }
-        
-        return observation, reward, done, info
+            # Increase penalty coefficient for commute time
+            reward = -0.2 * avg_commute + avg_satisfaction  # Doubled penalty
+            
+            # Additional penalty if vehicles are stuck at episode end
+            if self.simulation.episode_ended and self.simulation.active_vehicles:
+                stuck_penalty = -10 * len(self.simulation.active_vehicles)
+                reward += stuck_penalty
+            
+            observation = self._get_observation()
+            done = self.simulation.episode_ended
+            
+            info = {
+                'avg_satisfaction': avg_satisfaction,
+                'avg_commute_time': avg_commute,
+                'stuck_vehicles': len(self.simulation.active_vehicles)
+            }
+            
+            return observation, reward, done, info
     
     def _get_observation(self):
         """
@@ -127,8 +121,11 @@ class TrafficEnv(gym.Env):
         avg_commute_time = self.simulation.get_avg_commute_time()
         avg_satisfaction = self.simulation.get_avg_satisfaction()
         
+        # Exponentially increasing penalty for longer wait times
+        time_penalty = sum(1.1 ** vehicle.commute_time for vehicle in self.simulation.active_vehicles)
+        
         # Apply the reward formula from the PRD
-        reward = -0.1 * avg_commute_time + avg_satisfaction
+        reward = avg_satisfaction - 0.01 * time_penalty
         
         return reward
     
@@ -144,3 +141,29 @@ class TrafficEnv(gym.Env):
         Close the environment.
         """
         pass 
+
+    def calculate_reward(self):
+        """Calculate the reward based on multiple metrics."""
+        
+        # Base metrics
+        avg_commute = self.simulation.get_avg_commute_time()
+        avg_satisfaction = self.simulation.get_avg_satisfaction()
+        
+        # Queue metrics
+        queue_lengths = [self.simulation.get_waiting_count(d) for d in ['north', 'south', 'east', 'west']]
+        max_queue = max(queue_lengths)
+        queue_imbalance = max_queue - min(queue_lengths)
+        
+        # Throughput metrics
+        completion_rate = len(self.simulation.removed_vehicles) / TOTAL_VEHICLES
+        
+        # Combined reward
+        reward = (
+            -0.1 * avg_commute +           # Time penalty
+            1.0 * avg_satisfaction +        # Satisfaction
+            -0.2 * max_queue +             # Queue length penalty
+            -0.1 * queue_imbalance +       # Fairness penalty
+            2.0 * completion_rate          # Completion bonus
+        )
+        
+        return reward 

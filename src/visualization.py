@@ -397,34 +397,49 @@ def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current
         pygame.draw.circle(screen, DEBUG_COLORS['intersection'], (WIDTH//2, HEIGHT//2), 8, width=2)
 
 def draw_speed_slider(current_fps):
-    """Draw the speed control slider"""
+    """Draw a slider to control simulation speed"""
     screen = get_screen()
-    s = SPEED_SLIDER  # For shorter reference
     
     # Draw slider background
-    pygame.draw.rect(screen, s['background'], 
-                    (s['x'], s['y'], s['width'], s['height']), 
-                    border_radius=s['height']//2)
+    slider_rect = pygame.Rect(SPEED_SLIDER['x'], SPEED_SLIDER['y'], 
+                             SPEED_SLIDER['width'], SPEED_SLIDER['height'])
+    pygame.draw.rect(screen, (200, 200, 200), slider_rect)
     
-    # Calculate handle position
-    fps_range = s['max_fps'] - s['min_fps']
-    handle_x = s['x'] + (current_fps - s['min_fps']) / fps_range * s['width']
-    handle_y = s['y'] + s['height']//2
+    # Calculate handle position based on current FPS
+    fps_range = SPEED_SLIDER['max_fps'] - SPEED_SLIDER['min_fps']
+    handle_pos = SPEED_SLIDER['x'] + (current_fps - SPEED_SLIDER['min_fps']) / fps_range * SPEED_SLIDER['width']
     
     # Draw handle
-    mouse_pos = pygame.mouse.get_pos()
-    handle_rect = pygame.Rect(handle_x - s['handle_radius'], 
-                            handle_y - s['handle_radius'],
-                            s['handle_radius']*2, 
-                            s['handle_radius']*2)
+    handle_rect = pygame.Rect(handle_pos - 5, SPEED_SLIDER['y'] - 5, 10, SPEED_SLIDER['height'] + 10)
+    pygame.draw.rect(screen, (100, 100, 100), handle_rect)
     
-    # Change handle color if mouse is over it
-    handle_color = s['active_handle'] if handle_rect.collidepoint(mouse_pos) else s['handle']
-    pygame.draw.circle(screen, handle_color, (int(handle_x), int(handle_y)), s['handle_radius'])
+    # Draw label
+    font = pygame.font.SysFont('Arial', 16)
+    label = font.render(f"Speed: {int(current_fps)} FPS", True, (0, 0, 0))
+    screen.blit(label, (SPEED_SLIDER['x'] - 90, SPEED_SLIDER['y'] - 5))
     
-    # Draw speed label
-    font = pygame.font.SysFont('Arial', 14)
-    text = font.render(f"Simulation Speed: {int(current_fps)} FPS", True, s['label_color'])
-    screen.blit(text, (s['x'], s['y'] - 20))
+    return handle_rect
+
+def draw_training_slider(current_steps):
+    """Draw a slider to control training steps"""
+    screen = get_screen()
     
-    return handle_rect  # Return the handle rect for click detection 
+    # Draw slider background
+    slider_rect = pygame.Rect(TRAINING_SLIDER['x'], TRAINING_SLIDER['y'], 
+                             TRAINING_SLIDER['width'], TRAINING_SLIDER['height'])
+    pygame.draw.rect(screen, (200, 200, 200), slider_rect)
+    
+    # Calculate handle position based on current steps
+    steps_range = TRAINING_SLIDER['max_steps'] - TRAINING_SLIDER['min_steps']
+    handle_pos = TRAINING_SLIDER['x'] + (current_steps - TRAINING_SLIDER['min_steps']) / steps_range * TRAINING_SLIDER['width']
+    
+    # Draw handle
+    handle_rect = pygame.Rect(handle_pos - 5, TRAINING_SLIDER['y'] - 5, 10, TRAINING_SLIDER['height'] + 10)
+    pygame.draw.rect(screen, (50, 150, 50), handle_rect)
+    
+    # Draw label
+    font = pygame.font.SysFont('Arial', 16)
+    label = font.render(f"Training: {current_steps} steps", True, (0, 0, 0))
+    screen.blit(label, (TRAINING_SLIDER['x'] - 90, TRAINING_SLIDER['y'] - 5))
+    
+    return handle_rect 

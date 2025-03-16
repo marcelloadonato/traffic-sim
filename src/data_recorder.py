@@ -78,13 +78,13 @@ class DataRecorder:
             pd.DataFrame(self.episode_summaries).to_csv('data/episode_summaries.csv', index=False)
             
     def plot_learning_curve(self):
-        """Generate separate plots for reward, commute time, and satisfaction"""
+        """Generate separate plots and a combined plot with triple y-axes for all metrics"""
         if not self.episode_summaries:
             return
             
         df = pd.DataFrame(self.episode_summaries)
         
-        # Plot 1: Reward per episode
+        # Individual plots
         plt.figure(figsize=(10, 6))
         plt.plot(df['episode'], df['reward'], 'b-')
         plt.title('Reward per Episode')
@@ -94,7 +94,6 @@ class DataRecorder:
         plt.savefig('data/reward_curve.png')
         plt.close()
         
-        # Plot 2: Average commute time
         plt.figure(figsize=(10, 6))
         plt.plot(df['episode'], df['avg_commute_time'], 'r-')
         plt.title('Average Commute Time per Episode')
@@ -104,7 +103,6 @@ class DataRecorder:
         plt.savefig('data/commute_time_curve.png')
         plt.close()
         
-        # Plot 3: Average satisfaction
         plt.figure(figsize=(10, 6))
         plt.plot(df['episode'], df['avg_satisfaction'], 'g-')
         plt.title('Average Satisfaction per Episode')
@@ -112,4 +110,45 @@ class DataRecorder:
         plt.ylabel('Satisfaction (0-10)')
         plt.grid(True)
         plt.savefig('data/satisfaction_curve.png')
+        plt.close()
+        
+        # Combined plot with triple y-axes
+        fig, ax1 = plt.subplots(figsize=(12, 8))
+        
+        # Primary y-axis (left) for reward (blue)
+        ax1.set_xlabel('Episode')
+        ax1.set_ylabel('Reward', color='b')
+        ax1.plot(df['episode'], df['reward'], 'b-', label='Reward')
+        ax1.tick_params(axis='y', labelcolor='b')
+        
+        # Secondary y-axis (right) for commute time (red)
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('Commute Time', color='r')
+        ln1 = ax2.plot(df['episode'], df['avg_commute_time'], 'r-', label='Avg Commute Time')
+        ax2.tick_params(axis='y', labelcolor='r')
+        
+        # Third y-axis (far right) for satisfaction (green)
+        ax3 = ax1.twinx()
+        # Offset the third axis
+        ax3.spines['right'].set_position(('outward', 60))
+        ax3.set_ylabel('Satisfaction (0-10)', color='g')
+        ln2 = ax3.plot(df['episode'], df['avg_satisfaction'], 'g-', label='Avg Satisfaction')
+        ax3.tick_params(axis='y', labelcolor='g')
+        
+        # Set satisfaction y-axis limits to 0-10
+        ax3.set_ylim(0, 10)
+        
+        # Add title and grid
+        plt.title('Combined Metrics per Episode')
+        ax1.grid(True)
+        
+        # Combine legends from all axes
+        lns = [ax1.get_lines()[0]] + ln1 + ln2
+        labs = [l.get_label() for l in lns]
+        ax1.legend(lns, labs, loc='upper right')
+        
+        # Adjust layout to prevent label overlap
+        plt.tight_layout()
+        
+        plt.savefig('data/combined_curves.png')
         plt.close() 
