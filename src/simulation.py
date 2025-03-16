@@ -8,10 +8,30 @@ from collision import check_collision
 from shared import get_screen, get_clock
 from rl_agent import TrafficRLAgent
 
+"""
+Traffic Simulation with Reinforcement Learning
+
+Key Components:
+- set_traffic_lights: RL agent decides light states here
+- update_vehicles: Handles vehicle movement and state changes
+- handle_events: Processes user input and simulation controls
+- tutorial_mode: Educational mode with step-by-step explanations
+"""
+
 class Simulation:
     def __init__(self):
         # Initialize buildings
         self.buildings = []
+        # Tutorial mode settings
+        self.tutorial_mode = False
+        self.tutorial_step = 0
+        self.tutorial_messages = [
+            "Vehicles spawn and move toward the intersection.",
+            "RL agent observes waiting vehicles and picks a light state.",
+            "Reward reflects commute time and satisfaction—watch it evolve!"
+        ]
+        # Manual control mode
+        self.manual_mode = False
         # Northwest quadrant
         for _ in range(5):
             x = random.randint(50, WIDTH//2 - 100//2 - 80)
@@ -120,22 +140,22 @@ class Simulation:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     # Check if clicked on speed slider handle
-                    if self.slider_handle_rect.collidepoint(event.pos):
+                    if hasattr(self, 'slider_handle_rect') and self.slider_handle_rect.collidepoint(event.pos):
                         self.slider_dragging = True
-                    elif self.training_slider_handle_rect.collidepoint(event.pos):
+                    elif hasattr(self, 'training_slider_handle_rect') and self.training_slider_handle_rect.collidepoint(event.pos):
                         self.training_slider_dragging = True
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:  # Left click
                     self.slider_dragging = False
                     self.training_slider_dragging = False
             elif event.type == pygame.MOUSEMOTION:
-                if self.slider_dragging:
+                if self.slider_dragging and hasattr(self, 'slider_handle_rect'):
                     # Update FPS based on slider position
                     x = max(SPEED_SLIDER['x'], min(event.pos[0], SPEED_SLIDER['x'] + SPEED_SLIDER['width']))
                     rel_x = x - SPEED_SLIDER['x']
                     self.current_fps = int(SPEED_SLIDER['min_fps'] + (rel_x / SPEED_SLIDER['width']) * 
                                          (SPEED_SLIDER['max_fps'] - SPEED_SLIDER['min_fps']))
-                elif self.training_slider_dragging:
+                elif self.training_slider_dragging and hasattr(self, 'training_slider_handle_rect'):
                     # Update training steps based on slider position
                     x = max(TRAINING_SLIDER['x'], min(event.pos[0], TRAINING_SLIDER['x'] + TRAINING_SLIDER['width']))
                     rel_x = x - TRAINING_SLIDER['x']
@@ -165,6 +185,19 @@ class Simulation:
                         self.rl_agent.train()
                         self.training_in_progress = False
                         print(f"Training completed with {self.current_training_steps} steps")
+                elif event.key == pygame.K_m:  # Toggle manual mode
+                    if not self.training_in_progress:
+                        self.manual_mode = not self.manual_mode
+                        print(f"Manual mode: {'ON' if self.manual_mode else 'OFF'}")
+                elif event.key == pygame.K_SPACE and self.manual_mode:  # Toggle lights manually
+                    if self.ns_light == "green":
+                        self.ns_light = "yellow"
+                        self.ns_yellow_countdown = 30
+                    else:
+                        self.ew_light = "yellow"
+                        self.ew_yellow_countdown = 30
+                elif event.key == pygame.K_c and self.tutorial_mode:  # Continue tutorial
+                    self.tutorial_step += 1
     
     def update_traffic_lights(self):
         """Update traffic light states"""
@@ -230,6 +263,26 @@ class Simulation:
         for vehicle in self.active_vehicles:
             draw_vehicle(vehicle, DEBUG_MODE)
         
+        # Draw tutorial message if in tutorial mode
+        if self.tutorial_mode and self.tutorial_step < len(self.tutorial_messages):
+            font = pygame.font.SysFont('Arial', 24)
+            message = self.tutorial_messages[self.tutorial_step]
+            text = font.render(message, True, BLACK)
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, 50))
+            continue_text = font.render("Press C to continue", True, BLACK)
+            screen.blit(continue_text, (WIDTH//2 - continue_text.get_width()//2, 80))
+        
+        # Draw mode indicators
+        if self.tutorial_mode:
+            mode_text = "Tutorial Mode"
+        elif self.manual_mode:
+            mode_text = "Manual Mode"
+        else:
+            mode_text = "RL Mode"
+        font = pygame.font.SysFont('Arial', 20)
+        text = font.render(mode_text, True, BLACK)
+        screen.blit(text, (10, 10))
+        
         # Calculate and draw stats
         waiting_count = sum(1 for v in self.active_vehicles if v.state == "waiting")
         moving_count = sum(1 for v in self.active_vehicles if v.state == "moving")
@@ -281,6 +334,7 @@ class Simulation:
     def update_simulation(self):
         """Update the simulation for one step without drawing (used by RL)"""
         if not self.episode_ended:
+            # Update simulation state
             self.update_traffic_lights()
             
             # Spawn new vehicles if needed
@@ -288,6 +342,22 @@ class Simulation:
             
             # Update vehicles
             self.update_vehicles()
+            
+            # Record data if data recorder exists
+            if hasattr(self, 'data_recorder'):
+                waiting_count = sum(1 for v in self.active_vehicles if v.state == "waiting")
+                moving_count = sum(1 for v in self.active_vehicles if v.state == "moving")
+                arrived_count = len(self.removed_vehicles)
+                avg_satisfaction = self.get_avg_satisfaction()
+                
+                self.data_recorder.record_tick(
+                    self.current_tick,
+                    f"NS:{self.ns_light},EW:{self.ew_light}",
+                    waiting_count,
+                    moving_count,
+                    arrived_count,
+                    avg_satisfaction
+                )
             
             # Increment tick counter
             self.current_tick += 1
@@ -296,26 +366,20 @@ class Simulation:
             if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
                 if hasattr(self, 'data_recorder'):
                     self.data_recorder.end_episode(self.light_change_count)
-                    self.data_recorder.plot_learning_curve()
                 self.episode_ended = True
                 print("Episode ended automatically")
     
     def step(self, data_recorder):
-        """Perform one step of the simulation"""
+        """Update simulation state"""
+        # Handle events first
         self.handle_events()
         
         if not self.episode_ended:
-            # Get action from RL agent
-            waiting_vehicles = self.get_waiting_vehicles()
-            observation = np.array([
-                waiting_vehicles['north'],
-                waiting_vehicles['south'],
-                waiting_vehicles['east'],
-                waiting_vehicles['west']
-            ])
-            action = self.rl_agent.predict(observation)
-            self.set_traffic_lights(action)
+            # Handle tutorial mode pauses
+            if self.tutorial_mode and self.current_tick % 100 == 0:
+                return  # Pause for tutorial message
             
+            # Update simulation state
             self.update_traffic_lights()
             
             # Spawn new vehicles if needed
@@ -327,15 +391,13 @@ class Simulation:
             # Increment tick counter
             self.current_tick += 1
             
-            # Check if episode should end
+            # Check for episode end
             if self.current_tick >= EPISODE_LENGTH or (not self.active_vehicles and not self.spawn_schedule):
-                # End episode
-                data_recorder.end_episode(self.light_change_count)
-                data_recorder.plot_learning_curve()
                 self.episode_ended = True
-                print("Episode ended automatically")
+                if hasattr(self, 'data_recorder'):
+                    self.data_recorder.end_episode(self.light_change_count)
         
-        # Draw everything
+        # Draw current state
         self.draw(data_recorder)
         
         # Control simulation speed using the slider

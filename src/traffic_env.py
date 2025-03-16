@@ -4,11 +4,17 @@ import numpy as np
 from gymnasium import spaces
 from config import TOTAL_VEHICLES  # Fix import path
 
+"""
+Custom Environment for traffic light control using reinforcement learning.
+This environment interfaces with the traffic simulation to optimize traffic flow.
+
+Key Components:
+- Observation: Number of waiting vehicles per direction (state for RL)
+- Action: 0 = NS green/EW red, 1 = EW green/NS red (what RL controls)
+- Reward: -0.2 * commute + satisfaction balances efficiency and happiness
+"""
+
 class TrafficEnv(gym.Env):
-    """
-    Custom Environment for traffic light control using reinforcement learning.
-    This environment interfaces with the traffic simulation to optimize traffic flow.
-    """
     metadata = {'render_modes': ['human']}
 
     def __init__(self, simulation_interface=None):
@@ -74,7 +80,7 @@ class TrafficEnv(gym.Env):
             avg_satisfaction = self.simulation.get_avg_satisfaction()
             
             # Increase penalty coefficient for commute time
-            reward = -0.2 * avg_commute + avg_satisfaction  # Doubled penalty
+            reward = -0.2 * avg_commute + avg_satisfaction
             
             # Additional penalty if vehicles are stuck at episode end
             if self.simulation.episode_ended and self.simulation.active_vehicles:

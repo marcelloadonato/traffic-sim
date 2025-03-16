@@ -1,48 +1,95 @@
-# Traffic Simulation with Reinforcement Learning
+# Traffic Light Control with Reinforcement Learning
 
-A project to demonstrate RL-based traffic optimization in a virtual town.
+A traffic simulation that uses reinforcement learning to optimize traffic light timing at a single intersection. The RL agent learns to balance traffic flow efficiency with driver satisfaction.
 
-## Setup Instructions
-1. Clone this repository or create the project folder `traffic-sim-mvp`.
+## Features
+
+- Real-time traffic simulation with vehicles of different types
+- Reinforcement learning agent using PPO algorithm
+- Interactive visualization with debug mode
+- Educational tutorial mode
+- Manual control mode for human experimentation
+- RL dashboard showing agent's observations and decisions
+- Score tracking and achievements
+- Leaderboard of top performances
+
+## How It Works
+
+The RL agent observes the number of waiting vehicles in each direction and chooses traffic light states to optimize traffic flow. It earns rewards based on:
+- Reducing average commute time (-0.2 * commute)
+- Maintaining high driver satisfaction (+satisfaction)
+
+The agent learns to balance these objectives through experience, improving its strategy over time.
+
+## Controls
+
+- `K_t`: Toggle tutorial mode (when not training)
+- `K_m`: Toggle manual control mode (when not training)
+- `K_SPACE`: Toggle traffic lights (in manual mode)
+- `K_c`: Continue tutorial (in tutorial mode)
+- `K_d`: Toggle debug mode
+- `K_s`: Toggle slow mode
+- `K_e`: End current episode
+- `K_n`: Start new episode
+- `K_t`: Start training (when not in tutorial mode)
+
+## For Educators
+
+This simulation is designed to help students understand:
+1. How reinforcement learning can solve real-world problems
+2. The trade-offs between traffic efficiency and driver satisfaction
+3. The importance of state observation and reward design in RL
+
+### Exercises
+
+1. **Reward Function Exploration**
+   - Adjust the reward weights in `traffic_env.py`
+   - Compare the learning curves and traffic patterns
+   - Discuss how different weights affect the agent's behavior
+
+2. **Human vs RL Performance**
+   - Use manual mode to optimize traffic flow
+   - Compare your performance with the RL agent
+   - Analyze what strategies work best
+
+3. **State Space Design**
+   - Modify the observation space in `traffic_env.py`
+   - Add new features like vehicle types or queue lengths
+   - Observe how different state representations affect learning
+
+## Installation
+
+1. Clone the repository
 2. Install dependencies:
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 3. Run the simulation:
-   ```
+   ```bash
    python main.py
    ```
 
-## Project Status
-- MVP: Single intersection with 20–50 agents and one stoplight.
-- The simulation includes a basic vehicle model with various movement patterns.
-- Reinforcement Learning (RL) agent controls the traffic light to optimize flow.
-
-## Features
-- Real-time visualization of traffic at a single intersection
-- Vehicle agents with movement, waiting behavior, and satisfaction metrics
-- Stoplight control with RL-based optimization
-- Basic metrics tracking (commute time, satisfaction)
-
-## Controls
-- **T**: Start RL agent training (learn optimal stoplight control)
-- **D**: Toggle debug mode to display additional information
-- **S**: Toggle slow mode for easier debugging
-- **E**: End the current episode manually
-- **N**: Start a new episode (after one has ended)
-- **Speed Slider**: Adjust simulation speed with the slider at the bottom
-- **Training Steps Slider**: Adjust the number of training steps (100-20,000) before pressing T
-
-## Reinforcement Learning
-The RL agent observes the number of waiting vehicles in each direction and learns to control the traffic light to minimize commute times and maximize vehicle satisfaction.
-
-The agent uses Proximal Policy Optimization (PPO) algorithm from Stable Baselines3 for training.
-
 ## Requirements
+
 - Python 3.8+
-- PyGame
+- Pygame
 - NumPy
+- Stable-Baselines3
 - Pandas
 - Matplotlib
-- Stable Baselines3
-- Gymnasium 
+
+## Project Structure
+
+- `main.py`: Entry point and main game loop
+- `src/`
+  - `traffic_env.py`: RL environment definition
+  - `simulation.py`: Core simulation logic
+  - `rl_agent.py`: PPO agent implementation
+  - `visualization.py`: Graphics and UI
+  - `data_recorder.py`: Metrics and data logging
+  - `vehicle.py`: Vehicle behavior
+  - `config.py`: Configuration settings
+
+## License
+
+MIT License - feel free to use this project for educational purposes. 

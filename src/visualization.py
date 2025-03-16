@@ -308,38 +308,63 @@ def draw_car(pos, color, direction, vehicle):
         pygame.draw.rect(screen, BLACK, (x + car_length//4, y - car_width//2 - 1, wheel_size, wheel_size))
         pygame.draw.rect(screen, BLACK, (x + car_length//4, y + car_width//2 - 2, wheel_size, wheel_size))
 
+def draw_rl_dashboard(observation, action, reward):
+    """Draw RL agent information in the top-right corner"""
+    try:
+        screen = get_screen()
+        font = pygame.font.SysFont('Arial', 20)
+        
+        # Create dashboard background
+        dashboard_rect = pygame.Rect(WIDTH - 320, 10, 300, 100)
+        pygame.draw.rect(screen, (240, 240, 240), dashboard_rect)
+        pygame.draw.rect(screen, BLACK, dashboard_rect, 2)
+        
+        # Draw observation
+        obs_text = f"Observation: [{observation[0]},{observation[1]},{observation[2]},{observation[3]}]"
+        text = font.render(obs_text, True, BLACK)
+        screen.blit(text, (WIDTH - 310, 20))
+        
+        # Draw action
+        action_text = f"Action: {'NS' if action == 0 else 'EW'} green"
+        text = font.render(action_text, True, BLACK)
+        screen.blit(text, (WIDTH - 310, 45))
+        
+        # Draw reward
+        reward_text = f"Reward: {reward:.2f}"
+        text = font.render(reward_text, True, BLACK)
+        screen.blit(text, (WIDTH - 310, 70))
+    except Exception as e:
+        print(f"Error drawing RL dashboard: {e}")
+
 def draw_stats(waiting_count, moving_count, arrived_count, avg_satisfaction, current_episode, current_tick):
     """Draw simulation statistics"""
-    screen = get_screen()
-    # Create font
-    font = pygame.font.SysFont('Arial', FONT_SIZE['stats'])
-    
-    # Render stats
-    stats_text = [
-        f"Waiting: {waiting_count}",
-        f"Moving: {moving_count}",
-        f"Arrived: {arrived_count}",
-        f"Avg Satisfaction: {avg_satisfaction:.1f}/10",
-        f"Episode: {current_episode}",
-        f"Tick: {current_tick}"
-    ]
-    
-    # Draw stats background
-    pygame.draw.rect(screen, STATS_PANEL['background'], 
-                    (STATS_PANEL['padding'], STATS_PANEL['padding'], 
-                     STATS_PANEL['width'], STATS_PANEL['height']), 
-                    border_radius=5)
-    pygame.draw.rect(screen, STATS_PANEL['border'], 
-                    (STATS_PANEL['padding'], STATS_PANEL['padding'], 
-                     STATS_PANEL['width'], STATS_PANEL['height']), 
-                    width=1, border_radius=5)
-    
-    # Draw stats
-    for i, text in enumerate(stats_text):
-        text_surface = font.render(text, True, BLACK)
-        screen.blit(text_surface, (STATS_PANEL['padding'] + 5, STATS_PANEL['padding'] + 5 + i * 20))
-    
-    return waiting_count, moving_count, arrived_count, avg_satisfaction
+    try:
+        screen = get_screen()
+        font = pygame.font.SysFont('Arial', 20)
+        
+        # Create stats panel background
+        stats_rect = pygame.Rect(10, 40, 200, 120)
+        pygame.draw.rect(screen, (240, 240, 240), stats_rect)
+        pygame.draw.rect(screen, BLACK, stats_rect, 2)
+        
+        # Draw stats
+        texts = [
+            f"Waiting: {waiting_count}",
+            f"Moving: {moving_count}",
+            f"Arrived: {arrived_count}",
+            f"Satisfaction: {avg_satisfaction:.1f}",
+            f"Episode: {current_episode}",
+            f"Tick: {current_tick}"
+        ]
+        
+        for i, text in enumerate(texts):
+            text_surface = font.render(text, True, BLACK)
+            screen.blit(text_surface, (20, 50 + i * 20))
+        
+        return waiting_count, moving_count, arrived_count, avg_satisfaction
+    except Exception as e:
+        print(f"Error drawing stats: {e}")
+        return 0, 0, 0, 0
 
 def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current_tick, episode_length, lane_counts):
     """Draw debug information"""

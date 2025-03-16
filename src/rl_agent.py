@@ -3,6 +3,19 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from src.traffic_env import TrafficEnv
 import numpy as np
 
+"""
+Traffic Light Control RL Agent using PPO (Proximal Policy Optimization)
+
+Key Parameters:
+- learning_rate=0.0003: Controls how fast the agent learns from experiences
+- n_steps=2048: Number of steps to collect before updating the policy
+- batch_size=64: Number of samples to process in each training batch
+- n_epochs=10: Number of times to iterate over the collected data
+- gamma=0.99: Discount factor for future rewards (higher = more future-focused)
+- gae_lambda=0.95: Generalized Advantage Estimation parameter
+- clip_range=0.2: Maximum allowed change in policy per update
+"""
+
 class TrafficRLAgent:
     def __init__(self, simulation_interface):
         """
