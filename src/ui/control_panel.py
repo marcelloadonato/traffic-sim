@@ -147,12 +147,20 @@ class ControlPanel(QWidget):
         # Learning Rate Control
         lr_layout = QHBoxLayout()
         lr_label = QLabel("Learning Rate:")
+        lr_label.setToolTip("Controls how quickly the AI adjusts its strategy based on experience.\n"
+                          "Higher values (e.g., 0.01) make learning faster but less stable.\n"
+                          "Lower values (e.g., 0.0001) make learning slower but more stable.\n"
+                          "Changes take effect on next episode.")
         self.lr_spin = QDoubleSpinBox()
         self.lr_spin.setRange(0.0001, 0.01)
         self.lr_spin.setValue(0.0003)
         self.lr_spin.setSingleStep(0.0001)
         self.lr_spin.setDecimals(4)  # Show 4 decimal places
         self.lr_spin.valueChanged.connect(self.learning_rate_changed.emit)
+        self.lr_spin.setToolTip("Controls how quickly the AI adjusts its strategy based on experience.\n"
+                              "Higher values (e.g., 0.01) make learning faster but less stable.\n"
+                              "Lower values (e.g., 0.0001) make learning slower but more stable.\n"
+                              "Changes take effect on next episode.")
         lr_layout.addWidget(lr_label)
         lr_layout.addWidget(self.lr_spin)
         rl_layout.addLayout(lr_layout)
@@ -164,10 +172,18 @@ class ControlPanel(QWidget):
         # Batch Size Control
         batch_layout = QHBoxLayout()
         batch_label = QLabel("Batch Size:")
+        batch_label.setToolTip("Number of experiences the AI learns from in each update.\n"
+                             "Larger batches (e.g., 256) provide more stable learning but require more memory.\n"
+                             "Smaller batches (e.g., 32) make learning faster but less stable.\n"
+                             "Changes take effect on next episode.")
         self.batch_spin = QSpinBox()
         self.batch_spin.setRange(32, 256)
         self.batch_spin.setValue(64)
         self.batch_spin.valueChanged.connect(self.batch_size_changed.emit)
+        self.batch_spin.setToolTip("Number of experiences the AI learns from in each update.\n"
+                                 "Larger batches (e.g., 256) provide more stable learning but require more memory.\n"
+                                 "Smaller batches (e.g., 32) make learning faster but less stable.\n"
+                                 "Changes take effect on next episode.")
         batch_layout.addWidget(batch_label)
         batch_layout.addWidget(self.batch_spin)
         rl_layout.addLayout(batch_layout)
@@ -179,10 +195,18 @@ class ControlPanel(QWidget):
         # N Steps Control
         steps_layout = QHBoxLayout()
         steps_label = QLabel("Steps per Update:")
+        steps_label.setToolTip("How often the AI updates its knowledge.\n"
+                             "More steps (e.g., 4096) between updates provide better learning but slower progress.\n"
+                             "Fewer steps (e.g., 512) make learning faster but potentially less stable.\n"
+                             "Changes take effect on next episode.")
         self.steps_spin = QSpinBox()
         self.steps_spin.setRange(512, 4096)
         self.steps_spin.setValue(2048)
         self.steps_spin.valueChanged.connect(self.n_steps_changed.emit)
+        self.steps_spin.setToolTip("How often the AI updates its knowledge.\n"
+                                 "More steps (e.g., 4096) between updates provide better learning but slower progress.\n"
+                                 "Fewer steps (e.g., 512) make learning faster but potentially less stable.\n"
+                                 "Changes take effect on next episode.")
         steps_layout.addWidget(steps_label)
         steps_layout.addWidget(self.steps_spin)
         rl_layout.addLayout(steps_layout)
@@ -194,12 +218,20 @@ class ControlPanel(QWidget):
         # Gamma Control
         gamma_layout = QHBoxLayout()
         gamma_label = QLabel("Discount Factor (Gamma):")
+        gamma_label.setToolTip("How much the AI values future rewards vs immediate rewards.\n"
+                             "Higher values (e.g., 0.999) make the AI plan further ahead.\n"
+                             "Lower values (e.g., 0.9) make the AI focus on immediate rewards.\n"
+                             "Changes take effect on next episode.")
         self.gamma_spin = QDoubleSpinBox()
         self.gamma_spin.setRange(0.9, 0.999)
         self.gamma_spin.setValue(0.99)
         self.gamma_spin.setSingleStep(0.001)
         self.gamma_spin.setDecimals(3)  # Show 3 decimal places
         self.gamma_spin.valueChanged.connect(self.gamma_changed.emit)
+        self.gamma_spin.setToolTip("How much the AI values future rewards vs immediate rewards.\n"
+                                 "Higher values (e.g., 0.999) make the AI plan further ahead.\n"
+                                 "Lower values (e.g., 0.9) make the AI focus on immediate rewards.\n"
+                                 "Changes take effect on next episode.")
         gamma_layout.addWidget(gamma_label)
         gamma_layout.addWidget(self.gamma_spin)
         rl_layout.addLayout(gamma_layout)
@@ -211,12 +243,24 @@ class ControlPanel(QWidget):
         # Training Steps Slider
         training_slider_layout = QHBoxLayout()
         training_slider_label = QLabel("Training Steps:")
+        training_slider_label.setToolTip("Total number of steps the AI will train for.\n"
+                                       "More steps allow for better learning but take longer.\n"
+                                       "Fewer steps make training faster but may not reach optimal performance.\n"
+                                       "Changes take effect when starting new training.")
         self.training_steps_slider = QSlider(Qt.Horizontal)
         self.training_steps_slider.setRange(100, 20000)
         self.training_steps_slider.setValue(2000)
         self.training_steps_value = QLabel("2000")
+        self.training_steps_value.setToolTip("Total number of steps the AI will train for.\n"
+                                           "More steps allow for better learning but take longer.\n"
+                                           "Fewer steps make training faster but may not reach optimal performance.\n"
+                                           "Changes take effect when starting new training.")
         
         self.training_steps_slider.valueChanged.connect(self.on_training_steps_changed)
+        self.training_steps_slider.setToolTip("Total number of steps the AI will train for.\n"
+                                            "More steps allow for better learning but take longer.\n"
+                                            "Fewer steps make training faster but may not reach optimal performance.\n"
+                                            "Changes take effect when starting new training.")
         
         training_slider_layout.addWidget(training_slider_label)
         training_slider_layout.addWidget(self.training_steps_slider)
