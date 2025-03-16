@@ -7,11 +7,17 @@ A traffic simulation that uses reinforcement learning to optimize traffic light 
 - Real-time traffic simulation with vehicles of different types
 - Reinforcement learning agent using PPO algorithm
 - Interactive visualization with debug mode
-- Educational tutorial mode
+- Educational tutorial mode with step-by-step explanations
 - Manual control mode for human experimentation
 - RL dashboard showing agent's observations and decisions
 - Score tracking and achievements
 - Leaderboard of top performances
+- Multiple traffic generation modes (Random, Rush Hour, Custom)
+- Real-time performance metrics and statistics
+- CUDA support for faster training
+- Collision detection and prevention
+- Vehicle spawn scheduling system
+- Building generation for realistic urban environment
 
 ## How It Works
 
@@ -32,6 +38,47 @@ The agent learns to balance these objectives through experience, improving its s
 - `K_e`: End current episode
 - `K_n`: Start new episode
 - `K_t`: Start training (when not in tutorial mode)
+- `K_r`: Toggle between traffic generation modes (Random/Rush Hour/Custom)
+- `K_1`-`K_4`: Adjust simulation speed (1x-4x)
+- `K_ESCAPE`: Quit simulation
+
+## Simulation Modes
+
+1. **RL Mode (Default)**
+   - AI agent controls traffic lights
+   - Real-time learning and optimization
+   - Performance metrics displayed
+
+2. **Manual Mode**
+   - Human control of traffic lights
+   - Space bar to toggle lights
+   - Compare performance with AI
+
+3. **Tutorial Mode**
+   - Step-by-step learning experience
+   - Explains key concepts
+   - Interactive demonstrations
+
+4. **Debug Mode**
+   - Shows detailed simulation information
+   - Vehicle states and positions
+   - Performance metrics
+
+## Traffic Generation Modes
+
+1. **Random Mode**
+   - Random vehicle spawning
+   - Balanced traffic distribution
+
+2. **Rush Hour Mode**
+   - Increased traffic density
+   - Directional traffic patterns
+   - Realistic peak hour simulation
+
+3. **Custom Mode**
+   - Configurable traffic patterns
+   - Adjustable spawn rates
+   - Direction-specific traffic
 
 ## For Educators
 
@@ -39,6 +86,8 @@ This simulation is designed to help students understand:
 1. How reinforcement learning can solve real-world problems
 2. The trade-offs between traffic efficiency and driver satisfaction
 3. The importance of state observation and reward design in RL
+4. Traffic flow dynamics and optimization
+5. Real-world applications of AI in urban planning
 
 ### Exercises
 
@@ -56,6 +105,11 @@ This simulation is designed to help students understand:
    - Modify the observation space in `traffic_env.py`
    - Add new features like vehicle types or queue lengths
    - Observe how different state representations affect learning
+
+4. **Traffic Pattern Analysis**
+   - Experiment with different traffic generation modes
+   - Analyze how traffic patterns affect performance
+   - Design custom traffic scenarios
 
 ## Installation
 
@@ -77,6 +131,7 @@ This simulation is designed to help students understand:
 - Stable-Baselines3
 - Pandas
 - Matplotlib
+- PyTorch (with CUDA support if available)
 
 ## Project Structure
 
@@ -88,7 +143,10 @@ This simulation is designed to help students understand:
   - `visualization.py`: Graphics and UI
   - `data_recorder.py`: Metrics and data logging
   - `vehicle.py`: Vehicle behavior
+  - `vehicle_spawner.py`: Traffic generation system
+  - `collision.py`: Collision detection
   - `config.py`: Configuration settings
+  - `shared.py`: Shared utilities and constants
 
 ## License
 
