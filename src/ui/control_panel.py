@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                            QSlider, QSpinBox, QDoubleSpinBox, QComboBox, 
-                           QGroupBox, QPushButton, QRadioButton, QButtonGroup)
+                           QGroupBox, QPushButton, QRadioButton, QButtonGroup,
+                           QFrame, QLCDNumber, QGridLayout)
 from PyQt5.QtCore import Qt, pyqtSignal
 
 class ControlPanel(QWidget):
@@ -11,6 +12,8 @@ class ControlPanel(QWidget):
     gamma_changed = pyqtSignal(float)
     traffic_mode_changed = pyqtSignal(str)
     simulation_mode_changed = pyqtSignal(str)  # New signal for simulation mode
+    speed_changed = pyqtSignal(int)  # New signal for simulation speed
+    training_steps_changed = pyqtSignal(int)  # New signal for training steps
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -47,6 +50,79 @@ class ControlPanel(QWidget):
         
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
+        
+        # Simulation Speed Group
+        speed_group = QGroupBox("Simulation Speed")
+        speed_layout = QVBoxLayout()
+        
+        # Speed Slider
+        speed_slider_layout = QHBoxLayout()
+        speed_slider_label = QLabel("Speed (FPS):")
+        self.speed_slider = QSlider(Qt.Horizontal)
+        self.speed_slider.setRange(1, 60)
+        self.speed_slider.setValue(30)
+        self.speed_value_label = QLabel("30")
+        
+        self.speed_slider.valueChanged.connect(self.on_speed_changed)
+        
+        speed_slider_layout.addWidget(speed_slider_label)
+        speed_slider_layout.addWidget(self.speed_slider)
+        speed_slider_layout.addWidget(self.speed_value_label)
+        speed_layout.addLayout(speed_slider_layout)
+        
+        speed_group.setLayout(speed_layout)
+        layout.addWidget(speed_group)
+        
+        # Simulation Stats Group
+        stats_group = QGroupBox("Simulation Statistics")
+        stats_layout = QGridLayout()
+        
+        # Add stat labels and values
+        self.waiting_label = QLabel("Waiting:")
+        self.waiting_value = QLabel("0")
+        stats_layout.addWidget(self.waiting_label, 0, 0)
+        stats_layout.addWidget(self.waiting_value, 0, 1)
+        
+        self.moving_label = QLabel("Moving:")
+        self.moving_value = QLabel("0")
+        stats_layout.addWidget(self.moving_label, 1, 0)
+        stats_layout.addWidget(self.moving_value, 1, 1)
+        
+        self.arrived_label = QLabel("Arrived:")
+        self.arrived_value = QLabel("0")
+        stats_layout.addWidget(self.arrived_label, 2, 0)
+        stats_layout.addWidget(self.arrived_value, 2, 1)
+        
+        self.satisfaction_label = QLabel("Satisfaction:")
+        self.satisfaction_value = QLabel("0.0")
+        stats_layout.addWidget(self.satisfaction_label, 3, 0)
+        stats_layout.addWidget(self.satisfaction_value, 3, 1)
+        
+        self.episode_label = QLabel("Episode:")
+        self.episode_value = QLabel("0")
+        stats_layout.addWidget(self.episode_label, 4, 0)
+        stats_layout.addWidget(self.episode_value, 4, 1)
+        
+        self.tick_label = QLabel("Tick:")
+        self.tick_value = QLabel("0")
+        stats_layout.addWidget(self.tick_label, 5, 0)
+        stats_layout.addWidget(self.tick_value, 5, 1)
+        
+        # Add light state indicators
+        self.ns_light_label = QLabel("NS Light:")
+        self.ns_light_value = QLabel("Green")
+        self.ns_light_value.setStyleSheet("background-color: green; color: white; padding: 2px;")
+        stats_layout.addWidget(self.ns_light_label, 0, 2)
+        stats_layout.addWidget(self.ns_light_value, 0, 3)
+        
+        self.ew_light_label = QLabel("EW Light:")
+        self.ew_light_value = QLabel("Red")
+        self.ew_light_value.setStyleSheet("background-color: red; color: white; padding: 2px;")
+        stats_layout.addWidget(self.ew_light_label, 1, 2)
+        stats_layout.addWidget(self.ew_light_value, 1, 3)
+        
+        stats_group.setLayout(stats_layout)
+        layout.addWidget(stats_group)
         
         # RL Agent Parameters Group
         rl_group = QGroupBox("RL Agent Parameters")
@@ -98,6 +174,21 @@ class ControlPanel(QWidget):
         gamma_layout.addWidget(self.gamma_spin)
         rl_layout.addLayout(gamma_layout)
         
+        # Training Steps Slider
+        training_slider_layout = QHBoxLayout()
+        training_slider_label = QLabel("Training Steps:")
+        self.training_steps_slider = QSlider(Qt.Horizontal)
+        self.training_steps_slider.setRange(100, 20000)
+        self.training_steps_slider.setValue(2000)
+        self.training_steps_value = QLabel("2000")
+        
+        self.training_steps_slider.valueChanged.connect(self.on_training_steps_changed)
+        
+        training_slider_layout.addWidget(training_slider_label)
+        training_slider_layout.addWidget(self.training_steps_slider)
+        training_slider_layout.addWidget(self.training_steps_value)
+        rl_layout.addLayout(training_slider_layout)
+        
         rl_group.setLayout(rl_layout)
         layout.addWidget(rl_group)
         
@@ -128,6 +219,16 @@ class ControlPanel(QWidget):
         button_layout.addWidget(self.reset_button)
         layout.addLayout(button_layout)
         
+        # Status bar for tutorial messages or episode messages
+        self.status_frame = QFrame()
+        self.status_frame.setFrameShape(QFrame.StyledPanel)
+        self.status_frame.setFrameShadow(QFrame.Sunken)
+        status_layout = QVBoxLayout(self.status_frame)
+        self.status_label = QLabel("Ready")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        status_layout.addWidget(self.status_label)
+        layout.addWidget(self.status_frame)
+        
         self.setLayout(layout)
         
     def on_mode_changed(self, button):
@@ -138,6 +239,16 @@ class ControlPanel(QWidget):
             self.simulation_mode_changed.emit("Manual")
         else:  # tutorial mode
             self.simulation_mode_changed.emit("Tutorial")
+            
+    def on_speed_changed(self, value):
+        """Handle speed slider changes"""
+        self.speed_value_label.setText(str(value))
+        self.speed_changed.emit(value)
+        
+    def on_training_steps_changed(self, value):
+        """Handle training steps slider changes"""
+        self.training_steps_value.setText(str(value))
+        self.training_steps_changed.emit(value)
             
     def get_rl_parameters(self):
         """Get current RL agent parameters"""
@@ -168,4 +279,37 @@ class ControlPanel(QWidget):
         elif mode == "Manual":
             self.manual_mode.setChecked(True)
         else:
-            self.tutorial_mode.setChecked(True) 
+            self.tutorial_mode.setChecked(True)
+            
+    def update_stats(self, waiting_count, moving_count, arrived_count, avg_satisfaction, episode, tick):
+        """Update the simulation statistics display"""
+        self.waiting_value.setText(str(waiting_count))
+        self.moving_value.setText(str(moving_count))
+        self.arrived_value.setText(str(arrived_count))
+        self.satisfaction_value.setText(f"{avg_satisfaction:.1f}")
+        self.episode_value.setText(str(episode))
+        self.tick_value.setText(str(tick))
+        
+    def update_light_states(self, ns_light, ew_light):
+        """Update the traffic light state indicators"""
+        # Update NS light
+        self.ns_light_value.setText(ns_light.capitalize())
+        if ns_light == "green":
+            self.ns_light_value.setStyleSheet("background-color: green; color: white; padding: 2px;")
+        elif ns_light == "yellow":
+            self.ns_light_value.setStyleSheet("background-color: yellow; color: black; padding: 2px;")
+        else:  # red
+            self.ns_light_value.setStyleSheet("background-color: red; color: white; padding: 2px;")
+            
+        # Update EW light
+        self.ew_light_value.setText(ew_light.capitalize())
+        if ew_light == "green":
+            self.ew_light_value.setStyleSheet("background-color: green; color: white; padding: 2px;")
+        elif ew_light == "yellow":
+            self.ew_light_value.setStyleSheet("background-color: yellow; color: black; padding: 2px;")
+        else:  # red
+            self.ew_light_value.setStyleSheet("background-color: red; color: white; padding: 2px;")
+            
+    def set_status_message(self, message):
+        """Set the status/tutorial message"""
+        self.status_label.setText(message) 

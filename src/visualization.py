@@ -308,163 +308,19 @@ def draw_car(pos, color, direction, vehicle):
         pygame.draw.rect(screen, BLACK, (x + car_length//4, y - car_width//2 - 1, wheel_size, wheel_size))
         pygame.draw.rect(screen, BLACK, (x + car_length//4, y + car_width//2 - 2, wheel_size, wheel_size))
 
-def draw_rl_dashboard(observation, action, reward):
-    """Draw RL agent information in the top-right corner"""
-    try:
-        screen = get_screen()
-        font = pygame.font.SysFont('Arial', 20)
-        
-        # Create dashboard background
-        dashboard_rect = pygame.Rect(WIDTH - 320, 10, 300, 100)
-        pygame.draw.rect(screen, (240, 240, 240), dashboard_rect)
-        pygame.draw.rect(screen, BLACK, dashboard_rect, 2)
-        
-        # Draw observation
-        obs_text = f"Observation: [{observation[0]},{observation[1]},{observation[2]},{observation[3]}]"
-        text = font.render(obs_text, True, BLACK)
-        screen.blit(text, (WIDTH - 310, 20))
-        
-        # Draw action
-        action_text = f"Action: {'NS' if action == 0 else 'EW'} green"
-        text = font.render(action_text, True, BLACK)
-        screen.blit(text, (WIDTH - 310, 45))
-        
-        # Draw reward
-        reward_text = f"Reward: {reward:.2f}"
-        text = font.render(reward_text, True, BLACK)
-        screen.blit(text, (WIDTH - 310, 70))
-    except Exception as e:
-        print(f"Error drawing RL dashboard: {e}")
-
-def draw_stats(waiting_count, moving_count, arrived_count, avg_satisfaction, current_episode, current_tick):
-    """Draw simulation statistics"""
-    try:
-        screen = get_screen()
-        font = pygame.font.SysFont('Arial', 20)
-        
-        # Create stats panel background
-        stats_rect = pygame.Rect(10, 40, 200, 120)
-        pygame.draw.rect(screen, (240, 240, 240), stats_rect)
-        pygame.draw.rect(screen, BLACK, stats_rect, 2)
-        
-        # Draw stats
-        texts = [
-            f"Waiting: {waiting_count}",
-            f"Moving: {moving_count}",
-            f"Arrived: {arrived_count}",
-            f"Satisfaction: {avg_satisfaction:.1f}",
-            f"Episode: {current_episode}",
-            f"Tick: {current_tick}"
-        ]
-        
-        for i, text in enumerate(texts):
-            text_surface = font.render(text, True, BLACK)
-            screen.blit(text_surface, (20, 50 + i * 20))
-        
-        return waiting_count, moving_count, arrived_count, avg_satisfaction
-    except Exception as e:
-        print(f"Error drawing stats: {e}")
-        return 0, 0, 0, 0
-
 def draw_debug_info(ns_light, ew_light, active_vehicles, spawn_schedule, current_tick, episode_length, lane_counts):
     """Draw debug information"""
     screen = get_screen()
-    font = pygame.font.SysFont('Arial', FONT_SIZE['debug'])
     
-    # Prepare debug text
-    debug_text = [
-        f"NS Light: {ns_light}",
-        f"EW Light: {ew_light}",
-        f"Active vehicles: {len(active_vehicles)}",
-        f"Vehicles to spawn: {len(spawn_schedule)}",
-        f"Tick: {current_tick}/{episode_length}",
-        f"Press D to toggle debug mode",
-        f"Press S to toggle slow mode",
-        f"Press E to end episode",
-        f"Press N for new episode"
-    ]
+    # Draw lane entry/exit points
+    for lane, pos_data in LANES.items():
+        # Entry points
+        pygame.draw.circle(screen, DEBUG_COLORS['lane_entry'], pos_data['in'], 5)
+        # Exit points
+        pygame.draw.circle(screen, DEBUG_COLORS['lane_exit'], pos_data['out'], 5)
+        # Queue positions
+        for pos in pos_data['queue']:
+            pygame.draw.circle(screen, DEBUG_COLORS['queue_pos'], pos, 3)
     
-    # Draw debug panel background
-    panel_x = WIDTH - DEBUG_PANEL['width'] - DEBUG_PANEL['padding']
-    pygame.draw.rect(screen, DEBUG_PANEL['background'], 
-                    (panel_x, DEBUG_PANEL['padding'], 
-                     DEBUG_PANEL['width'], DEBUG_PANEL['height']), 
-                    border_radius=5)
-    pygame.draw.rect(screen, DEBUG_PANEL['border'], 
-                    (panel_x, DEBUG_PANEL['padding'], 
-                     DEBUG_PANEL['width'], DEBUG_PANEL['height']), 
-                    width=1, border_radius=5)
-    
-    # Draw debug text
-    for i, text in enumerate(debug_text):
-        text_surface = font.render(text, True, BLACK)
-        screen.blit(text_surface, (panel_x + 10, DEBUG_PANEL['padding'] + 5 + i * 20))
-    
-    # Draw lane occupancy
-    lane_text = [f"{lane}: {count}/{MAX_VEHICLES_PER_LANE}" for lane, count in lane_counts.items()]
-    for i, text in enumerate(lane_text):
-        text_surface = font.render(text, True, BLACK)
-        screen.blit(text_surface, (panel_x + 10, DEBUG_PANEL['padding'] + 200 + i * 20))
-    
-    # Draw debug visualization elements
-    if DEBUG_MODE:
-        # Draw lane entry/exit points
-        for lane, pos_data in LANES.items():
-            # Entry points
-            pygame.draw.circle(screen, DEBUG_COLORS['lane_entry'], pos_data['in'], 5)
-            # Exit points
-            pygame.draw.circle(screen, DEBUG_COLORS['lane_exit'], pos_data['out'], 5)
-            # Queue positions
-            for pos in pos_data['queue']:
-                pygame.draw.circle(screen, DEBUG_COLORS['queue_pos'], pos, 3)
-        
-        # Draw intersection center marker
-        pygame.draw.circle(screen, DEBUG_COLORS['intersection'], (WIDTH//2, HEIGHT//2), 8, width=2)
-
-def draw_speed_slider(current_fps):
-    """Draw a slider to control simulation speed"""
-    screen = get_screen()
-    
-    # Draw slider background
-    slider_rect = pygame.Rect(SPEED_SLIDER['x'], SPEED_SLIDER['y'], 
-                             SPEED_SLIDER['width'], SPEED_SLIDER['height'])
-    pygame.draw.rect(screen, (200, 200, 200), slider_rect)
-    
-    # Calculate handle position based on current FPS
-    fps_range = SPEED_SLIDER['max_fps'] - SPEED_SLIDER['min_fps']
-    handle_pos = SPEED_SLIDER['x'] + (current_fps - SPEED_SLIDER['min_fps']) / fps_range * SPEED_SLIDER['width']
-    
-    # Draw handle
-    handle_rect = pygame.Rect(handle_pos - 5, SPEED_SLIDER['y'] - 5, 10, SPEED_SLIDER['height'] + 10)
-    pygame.draw.rect(screen, (100, 100, 100), handle_rect)
-    
-    # Draw label
-    font = pygame.font.SysFont('Arial', 16)
-    label = font.render(f"Speed: {int(current_fps)} FPS", True, (0, 0, 0))
-    screen.blit(label, (SPEED_SLIDER['x'] - 90, SPEED_SLIDER['y'] - 5))
-    
-    return handle_rect
-
-def draw_training_slider(current_steps):
-    """Draw a slider to control training steps"""
-    screen = get_screen()
-    
-    # Draw slider background
-    slider_rect = pygame.Rect(TRAINING_SLIDER['x'], TRAINING_SLIDER['y'], 
-                             TRAINING_SLIDER['width'], TRAINING_SLIDER['height'])
-    pygame.draw.rect(screen, (200, 200, 200), slider_rect)
-    
-    # Calculate handle position based on current steps
-    steps_range = TRAINING_SLIDER['max_steps'] - TRAINING_SLIDER['min_steps']
-    handle_pos = TRAINING_SLIDER['x'] + (current_steps - TRAINING_SLIDER['min_steps']) / steps_range * TRAINING_SLIDER['width']
-    
-    # Draw handle
-    handle_rect = pygame.Rect(handle_pos - 5, TRAINING_SLIDER['y'] - 5, 10, TRAINING_SLIDER['height'] + 10)
-    pygame.draw.rect(screen, (50, 150, 50), handle_rect)
-    
-    # Draw label
-    font = pygame.font.SysFont('Arial', 16)
-    label = font.render(f"Training: {current_steps} steps", True, (0, 0, 0))
-    screen.blit(label, (TRAINING_SLIDER['x'] - 90, TRAINING_SLIDER['y'] - 5))
-    
-    return handle_rect 
+    # Draw intersection center marker
+    pygame.draw.circle(screen, DEBUG_COLORS['intersection'], (WIDTH//2, HEIGHT//2), 8, width=2) 

@@ -1,4 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox
+from PyQt5.QtCore import QTimer
 from .control_panel import ControlPanel
 from .visualization_panel import VisualizationPanel
 from src.rl_agent import TrafficRLAgent
@@ -34,6 +35,8 @@ class MainWindow(QMainWindow):
         self.control_panel.gamma_changed.connect(self.update_gamma)
         self.control_panel.traffic_mode_changed.connect(self.update_traffic_mode)
         self.control_panel.simulation_mode_changed.connect(self.update_simulation_mode)
+        self.control_panel.speed_changed.connect(self.update_simulation_speed)
+        self.control_panel.training_steps_changed.connect(self.update_training_steps)
         
         self.control_panel.start_button.clicked.connect(self.start_training)
         self.control_panel.stop_button.clicked.connect(self.stop_training)
@@ -51,6 +54,41 @@ class MainWindow(QMainWindow):
         # Set initial button states
         self.update_button_states()
         
+        # Create timer for updating UI with simulation stats
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.update_simulation_display)
+        self.update_timer.start(100)  # Update every 100ms
+        
+    def update_simulation_display(self):
+        """Update UI elements with current simulation state"""
+        if self.simulation_interface:
+            # Update statistics
+            waiting_count = sum(1 for v in self.simulation_interface.active_vehicles if v.state == "waiting")
+            moving_count = sum(1 for v in self.simulation_interface.active_vehicles if v.state == "moving")
+            arrived_count = len(self.simulation_interface.removed_vehicles)
+            avg_satisfaction = self.simulation_interface.get_avg_satisfaction()
+            episode = getattr(self.simulation_interface.data_recorder, 'current_episode', 0) if hasattr(self.simulation_interface, 'data_recorder') else 0
+            tick = self.simulation_interface.current_tick
+            
+            # Update control panel stats
+            self.control_panel.update_stats(waiting_count, moving_count, arrived_count, avg_satisfaction, episode, tick)
+            
+            # Update light states
+            self.control_panel.update_light_states(self.simulation_interface.ns_light, self.simulation_interface.ew_light)
+            
+            # Update tutorial message if in tutorial mode
+            if self.simulation_interface.tutorial_mode and self.simulation_interface.tutorial_step < len(self.simulation_interface.tutorial_messages):
+                message = self.simulation_interface.tutorial_messages[self.simulation_interface.tutorial_step]
+                self.control_panel.set_status_message(message)
+            # Update episode state message if needed
+            elif self.simulation_interface.episode_ended:
+                self.control_panel.set_status_message("Episode Ended - Press N to start new episode")
+            # Update training progress message if needed
+            elif self.simulation_interface.training_in_progress:
+                self.control_panel.set_status_message(f"Training in progress: {self.simulation_interface.current_training_steps} steps")
+            else:
+                self.control_panel.set_status_message("")
+        
     def update_button_states(self):
         """Update button states based on training status and simulation mode"""
         is_training = self.simulation_interface.training_in_progress
@@ -66,7 +104,8 @@ class MainWindow(QMainWindow):
             self.control_panel.lr_spin,
             self.control_panel.batch_spin,
             self.control_panel.steps_spin,
-            self.control_panel.gamma_spin
+            self.control_panel.gamma_spin,
+            self.control_panel.training_steps_slider
         ]
         for control in rl_controls:
             control.setEnabled(current_mode == "RL")
@@ -131,6 +170,17 @@ class MainWindow(QMainWindow):
             print(f"Error updating simulation mode: {e}")
             import traceback
             traceback.print_exc()
+        
+    def update_simulation_speed(self, value):
+        """Update the simulation speed (FPS)"""
+        if self.simulation_interface:
+            self.simulation_interface.current_fps = value
+    
+    def update_training_steps(self, value):
+        """Update the number of training steps"""
+        if self.simulation_interface:
+            self.simulation_interface.current_training_steps = value
+            self.rl_agent.total_timesteps = value
         
     def start_training(self):
         """Start the RL agent training"""

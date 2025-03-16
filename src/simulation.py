@@ -3,7 +3,7 @@ import pygame
 import numpy as np
 import torch
 from src.config import WIDTH, HEIGHT, BUILDING_COLORS, DEBUG_MODE, SLOW_MODE, EPISODE_LENGTH, WHITE, BLACK, LANES, SPEED_SLIDER, TRAINING_SLIDER, MAX_VEHICLES_PER_LANE
-from src.visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_stats, draw_debug_info, draw_speed_slider, draw_training_slider
+from src.visualization import draw_buildings, draw_road, draw_traffic_lights, draw_vehicle, draw_debug_info
 from src.vehicle_spawner import generate_vehicle_spawn_schedule, spawn_vehicles
 from src.collision import check_collision, get_vehicle_position
 from src.shared import get_screen, get_clock
@@ -223,30 +223,6 @@ class Simulation:
                                 self.ns_light = "green"
                             if hasattr(self, 'data_recorder'):
                                 self.data_recorder.record_light_change()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
-                    # Check if clicked on speed slider handle
-                    if hasattr(self, 'slider_handle_rect') and self.slider_handle_rect.collidepoint(event.pos):
-                        self.slider_dragging = True
-                    elif hasattr(self, 'training_slider_handle_rect') and self.training_slider_handle_rect.collidepoint(event.pos):
-                        self.training_slider_dragging = True
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Left click
-                    self.slider_dragging = False
-                    self.training_slider_dragging = False
-            elif event.type == pygame.MOUSEMOTION:
-                if self.slider_dragging and hasattr(self, 'slider_handle_rect'):
-                    # Update FPS based on slider position
-                    x = max(SPEED_SLIDER['x'], min(event.pos[0], SPEED_SLIDER['x'] + SPEED_SLIDER['width']))
-                    rel_x = x - SPEED_SLIDER['x']
-                    self.current_fps = int(SPEED_SLIDER['min_fps'] + (rel_x / SPEED_SLIDER['width']) * 
-                                         (SPEED_SLIDER['max_fps'] - SPEED_SLIDER['min_fps']))
-                elif self.training_slider_dragging and hasattr(self, 'training_slider_handle_rect'):
-                    # Update training steps based on slider position
-                    x = max(TRAINING_SLIDER['x'], min(event.pos[0], TRAINING_SLIDER['x'] + TRAINING_SLIDER['width']))
-                    rel_x = x - TRAINING_SLIDER['x']
-                    self.current_training_steps = int(TRAINING_SLIDER['min_steps'] + (rel_x / TRAINING_SLIDER['width']) * 
-                                                  (TRAINING_SLIDER['max_steps'] - TRAINING_SLIDER['min_steps']))
     
     def update_vehicles(self):
         """Update all active vehicles with GPU acceleration"""
@@ -321,42 +297,7 @@ class Simulation:
         for vehicle in self.active_vehicles:
             draw_vehicle(vehicle, DEBUG_MODE)
         
-        # Draw tutorial message if in tutorial mode
-        if self.tutorial_mode and self.tutorial_step < len(self.tutorial_messages):
-            font = pygame.font.SysFont('Arial', 24)
-            message = self.tutorial_messages[self.tutorial_step]
-            text = font.render(message, True, BLACK)
-            screen.blit(text, (WIDTH//2 - text.get_width()//2, 50))
-            continue_text = font.render("Press C to continue", True, BLACK)
-            screen.blit(continue_text, (WIDTH//2 - continue_text.get_width()//2, 80))
-        
-        # Draw mode indicators
-        if self.tutorial_mode:
-            mode_text = "Tutorial Mode"
-        elif self.manual_mode:
-            mode_text = "Manual Mode"
-        else:
-            mode_text = "RL Mode"
-        font = pygame.font.SysFont('Arial', 20)
-        text = font.render(mode_text, True, BLACK)
-        screen.blit(text, (10, 10))
-        
-        # Calculate and draw stats
-        waiting_count = sum(1 for v in self.active_vehicles if v.state == "waiting")
-        moving_count = sum(1 for v in self.active_vehicles if v.state == "moving")
-        arrived_count = len(self.removed_vehicles)
-        avg_satisfaction = self.get_avg_satisfaction()
-        
-        draw_stats(waiting_count, moving_count, arrived_count, avg_satisfaction, 
-                  self.data_recorder.current_episode if hasattr(self, 'data_recorder') else 0, 
-                  self.current_tick)
-        
-        # Record data
-        if hasattr(self, 'data_recorder'):
-            data_recorder.record_tick(self.current_tick, f"NS:{self.ns_light},EW:{self.ew_light}", 
-                                    waiting_count, moving_count, arrived_count, avg_satisfaction)
-        
-        # Draw debug info
+        # Draw debug info if debug mode is enabled
         if DEBUG_MODE:
             # Calculate lane occupancy
             lane_counts = {}
@@ -367,26 +308,7 @@ class Simulation:
             draw_debug_info(self.ns_light, self.ew_light, self.active_vehicles, 
                           self.spawn_schedule, self.current_tick, EPISODE_LENGTH, lane_counts)
         
-        # Draw episode state message
-        if self.episode_ended:
-            font = pygame.font.SysFont('Arial', 24)
-            text = font.render("Episode Ended - Press N to start new episode", True, BLACK)
-            text_rect = text.get_rect(center=(WIDTH//2, HEIGHT//2))
-            screen.blit(text, text_rect)
-        
-        # Draw the speed slider and store its handle rect
-        self.slider_handle_rect = draw_speed_slider(self.current_fps)
-        
-        # Draw the training steps slider and store its handle rect
-        self.training_slider_handle_rect = draw_training_slider(self.current_training_steps)
-        
-        # Show training status if in progress
-        if self.training_in_progress:
-            font = pygame.font.SysFont('Arial', 24)
-            text = font.render(f"Training in progress: {self.current_training_steps} steps", True, BLACK)
-            text_rect = text.get_rect(center=(WIDTH//2, 50))
-            screen.blit(text, text_rect)
-        
+        # Force display update
         pygame.display.flip()
     
     def update_simulation(self):
@@ -500,22 +422,25 @@ class Simulation:
         # Update current tick
         self.current_tick += 1
         
-        # Get current traffic counts for visualization
-        traffic_counts = self.get_traffic_counts()
+        # Record data for visualization
+        waiting_count = sum(1 for v in self.active_vehicles if v.state == "waiting")
+        moving_count = sum(1 for v in self.active_vehicles if v.state == "moving")
+        arrived_count = len(self.removed_vehicles)
+        avg_satisfaction = self.get_avg_satisfaction()
+        
+        if hasattr(self, 'data_recorder'):
+            data_recorder.record_tick(self.current_tick, f"NS:{self.ns_light},EW:{self.ew_light}", 
+                                    waiting_count, moving_count, arrived_count, avg_satisfaction)
         
         # Draw everything
         self.draw(data_recorder)
         
-        # Update tutorial message if in tutorial mode
-        if self.tutorial_mode:
-            self.draw_tutorial_message()
-        
-        # Control simulation speed using the slider
+        # Control simulation speed using the fps value
         clock = get_clock()
         if SLOW_MODE:
             clock.tick(10)  # Slower for debugging
         else:
-            clock.tick(self.current_fps)  # Use slider-controlled speed
+            clock.tick(self.current_fps)
     
     def set_traffic_mode(self, mode):
         """Set the traffic generation mode"""
