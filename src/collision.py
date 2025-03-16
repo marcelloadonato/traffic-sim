@@ -3,6 +3,7 @@ import math
 import torch
 from src.config import WIDTH, HEIGHT, ROAD_WIDTH, LANES
 from src.shared import DEVICE
+from src.agent import Vehicle
 
 def get_vehicle_position(vehicle):
     """Get the position coordinates for a vehicle based on its position value and progress"""
@@ -21,80 +22,68 @@ def get_vehicle_position(vehicle):
             return LANES[vehicle.position]['in']
         
         # Calculate position along the queue
-        if progress < 0.5:  # First half of movement - use queue positions
-            queue_idx = min(int(progress * 8), len(queue_positions) - 1)
-            return queue_positions[queue_idx]
-        else:  # Second half - approach the intersection entrance
-            # Interpolate between last queue position and intersection entrance
-            last_queue = queue_positions[-1]
-            intersection = LANES[vehicle.position]['in']
-            t = (progress - 0.5) * 2  # Scale 0.5-1.0 to 0-1
+        if len(queue_positions) > 0:
+            if progress < 0.5:  # First half of movement - use queue positions
+                queue_idx = min(int(progress * len(queue_positions)), len(queue_positions) - 1)
+                return queue_positions[queue_idx]
+            else:  # Second half - approach the intersection entrance
+                # Interpolate between last queue position and intersection entrance
+                last_queue = queue_positions[-1]
+                intersection = LANES[vehicle.position]['in']
+                t = (progress - 0.5) * 2  # Scale 0.5-1.0 to 0-1
+                return (
+                    last_queue[0] + (intersection[0] - last_queue[0]) * t,
+                    last_queue[1] + (intersection[1] - last_queue[1]) * t
+                )
+        else:
+            # Fallback if no queue positions
+            start = LANES[vehicle.position]['out']
+            end = LANES[vehicle.position]['in']
             return (
-                last_queue[0] + (intersection[0] - last_queue[0]) * t,
-                last_queue[1] + (intersection[1] - last_queue[1]) * t
+                start[0] + (end[0] - start[0]) * progress,
+                start[1] + (end[1] - start[1]) * progress
             )
     
     # If at the intersection
     elif vehicle.position == 'intersection':
-        # Get previous and next positions in route
+        # Get current route index and waypoints
         route_idx = vehicle.route.index('intersection')
-        prev_pos = vehicle.route[route_idx - 1] if route_idx > 0 else None
-        next_pos = vehicle.route[route_idx + 1] if route_idx < len(vehicle.route) - 1 else None
         
-        # Calculate progress through intersection
-        progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
+        # Find the next tuple waypoint after 'intersection'
+        next_waypoints = []
+        for i in range(route_idx + 1, min(route_idx + 4, len(vehicle.route))):
+            if isinstance(vehicle.route[i], tuple):
+                next_waypoints.append(vehicle.route[i])
         
-        # If we know where we're coming from and going to
-        if prev_pos and next_pos and isinstance(prev_pos, str) and isinstance(next_pos, str):
-            # Calculate entry and exit points
-            entry = LANES[prev_pos]['in']  # Start from the entry point of previous lane
-            exit_point = LANES[next_pos]['out']  # End at the exit point of next lane
+        # If we have waypoints, use them
+        if next_waypoints:
+            # Progress through waypoints sequentially
+            progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
+            total_waypoints = len(next_waypoints)
             
-            # Determine if the vehicle is turning or going straight
-            is_turning = (
-                (prev_pos in ['north', 'south'] and next_pos in ['east', 'west']) or
-                (prev_pos in ['east', 'west'] and next_pos in ['north', 'south'])
-            )
+            # Calculate which segment we're in and the progress within that segment
+            segment_idx = min(int(progress * total_waypoints), total_waypoints - 1)
+            segment_progress = (progress * total_waypoints) - segment_idx
+            segment_progress = max(0, min(1, segment_progress))  # Clamp between 0-1
             
-            if is_turning:
-                # For turning vehicles, use a curved path through the intersection
-                # Calculate control points for the curve based on direction
-                if prev_pos == 'north':
-                    if next_pos == 'east':
-                        control_point = (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//4)
-                    else:  # west
-                        control_point = (WIDTH//2 - ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//4)
-                elif prev_pos == 'south':
-                    if next_pos == 'east':
-                        control_point = (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 + ROAD_WIDTH//4)
-                    else:  # west
-                        control_point = (WIDTH//2 - ROAD_WIDTH//4, HEIGHT//2 + ROAD_WIDTH//4)
-                elif prev_pos == 'east':
-                    if next_pos == 'north':
-                        control_point = (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//4)
-                    else:  # south
-                        control_point = (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2 + ROAD_WIDTH//4)
-                else:  # west
-                    if next_pos == 'north':
-                        control_point = (WIDTH//2 - ROAD_WIDTH//4, HEIGHT//2 - ROAD_WIDTH//4)
-                    else:  # south
-                        control_point = (WIDTH//2 - ROAD_WIDTH//4, HEIGHT//2 + ROAD_WIDTH//4)
-                
-                # Quadratic Bezier curve calculation
-                t = progress
-                return (
-                    (1-t)**2 * entry[0] + 2*(1-t)*t * control_point[0] + t**2 * exit_point[0],
-                    (1-t)**2 * entry[1] + 2*(1-t)*t * control_point[1] + t**2 * exit_point[1]
-                )
+            # Get waypoint coordinates
+            if segment_idx == 0:
+                # First segment: from entry point to first waypoint
+                entry_point = LANES[vehicle.route[route_idx-1]]['in'] if route_idx > 0 and vehicle.route[route_idx-1] in LANES else (WIDTH//2, HEIGHT//2)
+                target = next_waypoints[0]
             else:
-                # For straight movement, use linear interpolation
-                return (
-                    entry[0] + (exit_point[0] - entry[0]) * progress,
-                    entry[1] + (exit_point[1] - entry[1]) * progress
-                )
-        
-        # Default intersection position if route information is incomplete
-        return (WIDTH//2, HEIGHT//2)
+                # Later segments: between waypoints
+                entry_point = next_waypoints[segment_idx-1]
+                target = next_waypoints[segment_idx] if segment_idx < len(next_waypoints) else next_waypoints[-1]
+            
+            # Linear interpolation between points
+            return (
+                entry_point[0] + (target[0] - entry_point[0]) * segment_progress,
+                entry_point[1] + (target[1] - entry_point[1]) * segment_progress
+            )
+        else:
+            # Fallback if no waypoints found - use center of intersection
+            return (WIDTH//2, HEIGHT//2)
     
     # Handle intermediate positions (tuples)
     elif isinstance(vehicle.position, tuple):
@@ -105,111 +94,141 @@ def get_vehicle_position(vehicle):
 
 def get_vehicle_direction(vehicle):
     """Determine the direction a vehicle should face based on its current position and next position"""
-    # Get current and next positions
+    # Get current position index in route
     current_idx = vehicle.route.index(vehicle.position)
-    next_pos = vehicle.route[current_idx + 1] if current_idx < len(vehicle.route) - 1 else None
     
-    # If no next position, maintain current direction
-    if not next_pos:
-        return 'right'
+    # If at the last position, use previous position to determine direction
+    if current_idx >= len(vehicle.route) - 1:
+        if current_idx > 0:
+            prev_pos = vehicle.route[current_idx - 1]
+            curr_pos = vehicle.position
+            
+            # Calculate direction from previous to current position
+            prev_coords = get_vehicle_position(vehicle)  # Current position coordinates
+            curr_coords = prev_coords  # Since we're already at this position
+            
+            # Determine direction based on the path we just took
+            dx = curr_coords[0] - (prev_coords[0] if isinstance(prev_coords, tuple) else 0)
+            dy = curr_coords[1] - (prev_coords[1] if isinstance(prev_coords, tuple) else 0)
+            
+            # Return direction based on the larger component
+            if abs(dx) > abs(dy):
+                return 'right' if dx > 0 else 'left'
+            else:
+                return 'down' if dy > 0 else 'up'
+        else:
+            # Default directions for spawn points if no history
+            if vehicle.position == 'north':
+                return 'down'
+            elif vehicle.position == 'south':
+                return 'up'
+            elif vehicle.position == 'east':
+                return 'left'
+            elif vehicle.position == 'west':
+                return 'right'
+            return 'right'  # Default
     
-    # If current position is a cardinal direction
-    if vehicle.position in ['north', 'south', 'east', 'west']:
-        if vehicle.position == 'north':
-            return 'down'
-        elif vehicle.position == 'south':
-            return 'up'
-        elif vehicle.position == 'east':
-            return 'left'
-        elif vehicle.position == 'west':
-            return 'right'
+    # Get next position
+    next_pos = vehicle.route[current_idx + 1]
     
-    # Get coordinates for current and next positions
+    # Get current and next coordinates
     curr_coords = get_vehicle_position(vehicle)
-    next_coords = None
     
+    # Get next_coords based on what next_pos is
     if isinstance(next_pos, tuple):
         next_coords = next_pos
     elif next_pos in LANES:
         next_coords = LANES[next_pos]['in']
     elif next_pos == 'intersection':
-        # Use the entry point of the intersection based on current position
-        if vehicle.position == 'north':
-            next_coords = (WIDTH//2, HEIGHT//2 - ROAD_WIDTH//2)
-        elif vehicle.position == 'south':
-            next_coords = (WIDTH//2, HEIGHT//2 + ROAD_WIDTH//2)
-        elif vehicle.position == 'east':
-            next_coords = (WIDTH//2 + ROAD_WIDTH//2, HEIGHT//2)
-        elif vehicle.position == 'west':
-            next_coords = (WIDTH//2 - ROAD_WIDTH//2, HEIGHT//2)
-    
-    if next_coords:
-        # Determine direction based on coordinate differences
-        dx = next_coords[0] - curr_coords[0]
-        dy = next_coords[1] - curr_coords[1]
+        # Handle approach to intersection better - get first waypoint in intersection
+        route_idx = current_idx + 1  # Index of 'intersection'
         
-        # Use the larger difference to determine primary direction
-        if abs(dx) > abs(dy):
-            return 'right' if dx > 0 else 'left'
+        # Look for the next waypoint after 'intersection'
+        if route_idx + 1 < len(vehicle.route) and isinstance(vehicle.route[route_idx + 1], tuple):
+            next_coords = vehicle.route[route_idx + 1]
         else:
-            return 'down' if dy > 0 else 'up'
+            # Fallback - use default entry points
+            if vehicle.position == 'north':
+                next_coords = (WIDTH//2, HEIGHT//2 - ROAD_WIDTH//4)
+            elif vehicle.position == 'south':
+                next_coords = (WIDTH//2, HEIGHT//2 + ROAD_WIDTH//4)
+            elif vehicle.position == 'east':
+                next_coords = (WIDTH//2 + ROAD_WIDTH//4, HEIGHT//2)
+            elif vehicle.position == 'west':
+                next_coords = (WIDTH//2 - ROAD_WIDTH//4, HEIGHT//2)
+            else:
+                next_coords = (WIDTH//2, HEIGHT//2)
+    else:
+        # For other named destinations, use their entry point
+        dest_idx = vehicle.route.index(next_pos)
+        if dest_idx > 0 and dest_idx < len(vehicle.route) - 1:
+            if isinstance(vehicle.route[dest_idx + 1], tuple):
+                next_coords = vehicle.route[dest_idx + 1]
+            else:
+                next_coords = (WIDTH//2, HEIGHT//2)  # Default fallback
+        else:
+            next_coords = LANES.get(next_pos, {}).get('in', (WIDTH//2, HEIGHT//2))
     
-    return 'right'  # Default direction
+    # Calculate direction vector
+    dx = next_coords[0] - curr_coords[0]
+    dy = next_coords[1] - curr_coords[1]
+    
+    # Use the larger difference to determine primary direction,
+    # with a preference for maintaining the current direction when close to equal
+    if abs(dx) > abs(dy) * 1.2:  # Add a 20% bias to prefer horizontal
+        return 'right' if dx > 0 else 'left'
+    elif abs(dy) > abs(dx) * 1.2:  # Add a 20% bias to prefer vertical
+        return 'down' if dy > 0 else 'up'
+    elif vehicle.position in ['north', 'south']:
+        # When differences are close and coming from N/S, prefer vertical
+        return 'down' if dy > 0 else 'up'
+    else:
+        # When differences are close and coming from E/W, prefer horizontal
+        return 'right' if dx > 0 else 'left'
 
 def check_collision(vehicle, next_position, active_vehicles):
-    """Check if moving to next_position would cause a collision with another vehicle using GPU acceleration"""
-    # Get the actual coordinates for the next position
-    next_pos_coords = None
+    """Check if moving to next_position would cause a collision with another vehicle using GPU acceleration."""
+    if not next_position:
+        return False
     
+    # Get coordinates for the next position
+    next_pos_coords = None
     if next_position == 'intersection':
-        # For intersection, use the entry point based on where the vehicle is coming from
-        if vehicle.position == 'north':
-            next_pos_coords = (WIDTH//2, HEIGHT//2 - 40)
-        elif vehicle.position == 'south':
-            next_pos_coords = (WIDTH//2, HEIGHT//2 + 40)
-        elif vehicle.position == 'east':
-            next_pos_coords = (WIDTH//2 + 40, HEIGHT//2)
-        elif vehicle.position == 'west':
-            next_pos_coords = (WIDTH//2 - 40, HEIGHT//2)
-        else:
-            next_pos_coords = (WIDTH//2, HEIGHT//2)
+        route_idx = vehicle.route.index('intersection')
+        next_idx = route_idx + 1 if route_idx < len(vehicle.route) - 1 else route_idx
+        next_pos_coords = get_vehicle_position(Vehicle(vehicle.start_position, vehicle.destination)) if next_idx == route_idx else vehicle.route[next_idx]
     elif next_position in LANES:
         next_pos_coords = LANES[next_position]['in']
+    elif isinstance(next_position, tuple):
+        next_pos_coords = next_position
     else:
-        return False  # Unknown position, assume no collision
+        return False
     
-    # Get current vehicle's position coordinates
+    # Get current vehicle's position
     current_pos_coords = get_vehicle_position(vehicle)
     
-    # Convert positions to tensors for GPU acceleration
+    # Convert to tensors
     next_pos_tensor = torch.tensor(next_pos_coords, device=DEVICE)
     current_pos_tensor = torch.tensor(current_pos_coords, device=DEVICE)
     
-    # Create tensors for all other vehicle positions
+    # Check distances to other vehicles
     other_positions = []
     for other in active_vehicles:
         if other == vehicle:
-            continue  # Skip self
-            
-        # Skip vehicles not in the same lane or not ahead of us
-        if other.position != next_position and other.position != vehicle.position:
             continue
-            
+        if other.position not in [vehicle.position, next_position, 'intersection']:
+            continue
         other_pos = get_vehicle_position(other)
         other_positions.append(other_pos)
     
     if not other_positions:
         return False
     
-    # Convert other positions to tensor
     other_pos_tensor = torch.tensor(other_positions, device=DEVICE)
-    
-    # Calculate distances using GPU
     distances = torch.sqrt(torch.sum((next_pos_tensor - other_pos_tensor) ** 2, dim=1))
     
-    # Check for collisions (distance < min_distance)
-    min_distance = 25  # Simple minimum distance to prevent overlap
+    # Adjust minimum distance for smoother flow
+    min_distance = 30  # Increased from 25 to reduce false positives
     collision_mask = distances < min_distance
     
-    # If any vehicle is too close, consider it a collision
     return torch.any(collision_mask) 

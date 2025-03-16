@@ -226,6 +226,9 @@ class Simulation:
     
     def update_vehicles(self):
         """Update all active vehicles with GPU acceleration"""
+        # Prevent multiple vehicles in intersection
+        intersection_occupied = any(v.position == 'intersection' for v in self.active_vehicles)
+        
         # Update vehicle positions tensor
         for i, vehicle in enumerate(self.active_vehicles):
             if i >= MAX_VEHICLES_PER_LANE * 4:
@@ -235,6 +238,13 @@ class Simulation:
         
         # Update vehicles in parallel where possible
         for vehicle in self.active_vehicles[:]:
+            # Check if vehicle is about to enter occupied intersection
+            if vehicle.position in ['north', 'south', 'east', 'west'] and vehicle.state == "moving":
+                next_idx = vehicle.route.index(vehicle.position) + 1
+                if next_idx < len(vehicle.route) and vehicle.route[next_idx] == 'intersection' and intersection_occupied:
+                    vehicle.state = "waiting"
+                    continue
+                    
             # Set the collision detection function with GPU acceleration
             vehicle.check_collision_ahead = lambda: check_collision(vehicle, 
                                                                   vehicle.route[vehicle.route.index(vehicle.position) + 1] 

@@ -1,5 +1,5 @@
 import random
-from src.config import LANES, INTERMEDIATE_POSITIONS
+from src.config import LANES, INTERMEDIATE_POSITIONS, WIDTH, HEIGHT
 
 class Vehicle:
     def __init__(self, start, destination):
@@ -31,26 +31,120 @@ class Vehicle:
             self.base_speed = 25  # Slightly slower base speed for vans
         
     def _determine_route(self):
-        """Determine the route from start to destination"""
+        """Create a complete route from start to destination with proper waypoints."""
         route = [self.start_position]
         
-        # Add intermediate positions for smoother movement
         if self.start_position != self.destination:
-            # Add intermediate positions before intersection
+            # Add pre-intersection waypoints (approach)
             route_key = f'{self.start_position}_to_intersection'
             if route_key in INTERMEDIATE_POSITIONS:
                 route.extend(INTERMEDIATE_POSITIONS[route_key])
             
-            # Add intersection
+            # Add the intersection marker
             route.append('intersection')
             
-            # Add intermediate positions after intersection
+            # Add precise waypoints through the intersection based on turn type
+            if self.start_position == 'north':
+                if self.destination == 'south':
+                    # Straight path (north to south)
+                    route.extend([
+                        (WIDTH//2, HEIGHT//2 - 20),  # Enter intersection
+                        (WIDTH//2, HEIGHT//2),       # Center
+                        (WIDTH//2, HEIGHT//2 + 20)   # Exit intersection
+                    ])
+                elif self.destination == 'east':
+                    # Right turn (north to east)
+                    route.extend([
+                        (WIDTH//2, HEIGHT//2 - 20),  # Enter intersection
+                        (WIDTH//2 + 10, HEIGHT//2 - 10),  # Curve point
+                        (WIDTH//2 + 20, HEIGHT//2)   # Exit intersection
+                    ])
+                elif self.destination == 'west':
+                    # Left turn (north to west)
+                    route.extend([
+                        (WIDTH//2, HEIGHT//2 - 20),   # Enter intersection
+                        (WIDTH//2 - 10, HEIGHT//2 - 10),  # Curve point
+                        (WIDTH//2 - 20, HEIGHT//2)    # Exit intersection
+                    ])
+            elif self.start_position == 'south':
+                if self.destination == 'north':
+                    # Straight path (south to north)
+                    route.extend([
+                        (WIDTH//2, HEIGHT//2 + 20),  # Enter intersection
+                        (WIDTH//2, HEIGHT//2),       # Center
+                        (WIDTH//2, HEIGHT//2 - 20)   # Exit intersection
+                    ])
+                elif self.destination == 'west':
+                    # Right turn (south to west)
+                    route.extend([
+                        (WIDTH//2, HEIGHT//2 + 20),   # Enter intersection
+                        (WIDTH//2 - 10, HEIGHT//2 + 10),  # Curve point
+                        (WIDTH//2 - 20, HEIGHT//2)    # Exit intersection
+                    ])
+                elif self.destination == 'east':
+                    # Left turn (south to east)
+                    route.extend([
+                        (WIDTH//2, HEIGHT//2 + 20),   # Enter intersection
+                        (WIDTH//2 + 10, HEIGHT//2 + 10),  # Curve point
+                        (WIDTH//2 + 20, HEIGHT//2)    # Exit intersection
+                    ])
+            elif self.start_position == 'east':
+                if self.destination == 'west':
+                    # Straight path (east to west)
+                    route.extend([
+                        (WIDTH//2 + 20, HEIGHT//2),  # Enter intersection
+                        (WIDTH//2, HEIGHT//2),       # Center
+                        (WIDTH//2 - 20, HEIGHT//2)   # Exit intersection
+                    ])
+                elif self.destination == 'north':
+                    # Right turn (east to north)
+                    route.extend([
+                        (WIDTH//2 + 20, HEIGHT//2),   # Enter intersection
+                        (WIDTH//2 + 10, HEIGHT//2 - 10),  # Curve point
+                        (WIDTH//2, HEIGHT//2 - 20)    # Exit intersection
+                    ])
+                elif self.destination == 'south':
+                    # Left turn (east to south)
+                    route.extend([
+                        (WIDTH//2 + 20, HEIGHT//2),   # Enter intersection
+                        (WIDTH//2 + 10, HEIGHT//2 + 10),  # Curve point
+                        (WIDTH//2, HEIGHT//2 + 20)    # Exit intersection
+                    ])
+            elif self.start_position == 'west':
+                if self.destination == 'east':
+                    # Straight path (west to east)
+                    route.extend([
+                        (WIDTH//2 - 20, HEIGHT//2),  # Enter intersection
+                        (WIDTH//2, HEIGHT//2),       # Center
+                        (WIDTH//2 + 20, HEIGHT//2)   # Exit intersection
+                    ])
+                elif self.destination == 'south':
+                    # Right turn (west to south)
+                    route.extend([
+                        (WIDTH//2 - 20, HEIGHT//2),   # Enter intersection
+                        (WIDTH//2 - 10, HEIGHT//2 + 10),  # Curve point
+                        (WIDTH//2, HEIGHT//2 + 20)    # Exit intersection
+                    ])
+                elif self.destination == 'north':
+                    # Left turn (west to north)
+                    route.extend([
+                        (WIDTH//2 - 20, HEIGHT//2),   # Enter intersection
+                        (WIDTH//2 - 10, HEIGHT//2 - 10),  # Curve point
+                        (WIDTH//2, HEIGHT//2 - 20)    # Exit intersection
+                    ])
+            
+            # Add post-intersection waypoints (exit)
             route_key = f'intersection_to_{self.destination}'
             if route_key in INTERMEDIATE_POSITIONS:
                 route.extend(INTERMEDIATE_POSITIONS[route_key])
         
-        # Add destination
+        # Add final destination
         route.append(self.destination)
+        
+        # Print route for debugging
+        if len(route) > 3:
+            print(f"Route: {route}")
+        
         return route
     
     def update(self, light_state, current_fps=30):
@@ -77,15 +171,15 @@ class Vehicle:
         # Check if we need to stop
         should_stop = False
         
-        # Stop at red light if we're at the intersection entrance
+        # Stop at red or yellow light if approaching intersection
         if self.position in ['north', 'south', 'east', 'west']:
-            if light_state == "red" and self._should_stop_at_red():
+            if light_state in ["red", "yellow"]:
                 should_stop = True
                 if self.state != "waiting" and self.log_counter == 0:
-                    print(f"Vehicle stopped at red light: {self.position}")
+                    print(f"Vehicle stopped at {light_state} light: {self.position}")
                 self.state = "waiting"
                 self.waiting_time += 1
-                self.animation_offset = 0  # Reset animation when stopping
+                self.animation_offset = 0
         
         # Stop if there's a collision ahead
         if self.check_collision_ahead():
@@ -103,42 +197,21 @@ class Vehicle:
             self.stopped_for_collision = False
             self.waiting_time = 0
             
-            # Adjust position threshold based on current position
             base_threshold = self.position_threshold
-            if self.position == 'intersection':
-                # Move faster through intersection
-                base_threshold = self.position_threshold // 2
-            elif isinstance(self.position, tuple):
-                # Move faster through intermediate positions
-                base_threshold = self.position_threshold // 2
+            if self.position == 'intersection' or isinstance(self.position, tuple):
+                base_threshold = self.position_threshold // 2  # Faster through intersection
             
             self.position_time += 1
-            
-            # Calculate smooth animation offset with FPS scaling
             progress = min(self.position_time / base_threshold, 1.0)
-            # Scale the animation speed based on FPS (normalize to 30 FPS)
             fps_scale = current_fps / 30.0
             
-            # Calculate movement speed based on position and vehicle type
-            movement_speed = self.base_speed
-            if self.position == 'intersection':
-                movement_speed *= 1.5  # Move 50% faster in intersection
-            elif isinstance(self.position, tuple):
-                movement_speed *= 1.5  # Move 50% faster through intermediate positions
+            movement_speed = self.base_speed * 1.5 if self.position == 'intersection' else self.base_speed
+            self.animation_offset = int(progress * movement_speed * fps_scale)
             
-            # Apply animation offset
-            if self.position in ['north', 'south']:
-                self.animation_offset = int(progress * movement_speed * fps_scale)
-            else:
-                self.animation_offset = int(progress * movement_speed * fps_scale)
-            
-            # Move to next position if we've waited long enough
             if self.position_time >= base_threshold:
                 self.position = next_pos
                 self.position_time = 0
-                self.animation_offset = 0  # Reset animation when changing positions
-                
-                # Update queue position if we're in a lane
+                self.animation_offset = 0
                 if self.position in ['north', 'south', 'east', 'west']:
                     self.queue_position = min(self.queue_position + 1, 3)
         

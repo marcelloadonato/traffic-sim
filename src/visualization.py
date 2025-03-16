@@ -227,20 +227,53 @@ def draw_vehicle(vehicle, debug_mode=False):
     pos = get_vehicle_position(vehicle)
     direction = get_vehicle_direction(vehicle)
     
+    # Create satisfaction color gradient from red (0) to green (10)
+    sat_level = max(0, min(10, vehicle.satisfaction))  # Ensure satisfaction is between 0-10
+    # Calculate color: red component decreases as satisfaction increases, green increases
+    red = int(255 * (10 - sat_level) / 10)
+    green = int(255 * sat_level / 10)
+    satisfaction_color = (red, green, 0)  # R,G,B format
+    
+    # Calculate the position with animation offset for both vehicle and ID
+    animated_pos = list(pos)
+    if direction == 'up':
+        animated_pos[1] -= vehicle.animation_offset
+    elif direction == 'down':
+        animated_pos[1] += vehicle.animation_offset
+    elif direction == 'left':
+        animated_pos[0] -= vehicle.animation_offset
+    elif direction == 'right':
+        animated_pos[0] += vehicle.animation_offset
+    animated_pos = tuple(animated_pos)
+    
     # Draw waiting indicator for vehicles stopped at red light or due to collision
     if vehicle.state == "waiting" or vehicle.stopped_for_collision:
-        # Draw a red circle under the vehicle
-        indicator_color = (255, 0, 0, 128) if vehicle.state == "waiting" else (255, 165, 0, 128)  # Red for light, orange for collision
-        pygame.draw.circle(screen, indicator_color, pos, 15, width=2)
-        
-        # Draw a small satisfaction indicator
-        sat_color = (0, 255, 0) if vehicle.satisfaction > 7 else \
-                   (255, 255, 0) if vehicle.satisfaction > 3 else \
-                   (255, 0, 0)
-        pygame.draw.circle(screen, sat_color, (pos[0], pos[1] - 15), vehicle.satisfaction // 2 + 1)
+        # Draw a circle under the vehicle - use surface for transparency
+        if vehicle.state == "waiting":
+            indicator_color = (255, 0, 0)  # Red for light
+        else:
+            indicator_color = (255, 165, 0)  # Orange for collision
+            
+        # Create a transparent surface for the indicator
+        indicator_surface = pygame.Surface((30, 30), pygame.SRCALPHA)
+        pygame.draw.circle(indicator_surface, (*indicator_color, 128), (15, 15), 15, width=2)
+        screen.blit(indicator_surface, (animated_pos[0] - 15, animated_pos[1] - 15))
     
-    # Draw the vehicle with animation offset
-    draw_car(pos, vehicle.color, direction, vehicle)
+    # Draw the vehicle using the animated position
+    draw_car(animated_pos, satisfaction_color, direction, vehicle)
+    
+    # Always draw vehicle ID (not just in debug mode) - using animated position
+    font = pygame.font.SysFont('Arial', FONT_SIZE['vehicle_id'])
+    id_text = font.render(f"{id(vehicle) % 1000}", True, WHITE)
+    
+    # Create a background for the ID text
+    id_bg_rect = id_text.get_rect(center=animated_pos)
+    id_bg_rect.inflate_ip(4, 2)  # Slightly larger than the text
+    id_bg = pygame.Surface((id_bg_rect.width, id_bg_rect.height))
+    id_bg.fill((0, 0, 0))
+    id_bg.set_alpha(180)
+    screen.blit(id_bg, id_bg_rect)
+    screen.blit(id_text, id_text.get_rect(center=animated_pos))
     
     # Draw debug info if enabled
     if debug_mode:
@@ -249,33 +282,20 @@ def draw_vehicle(vehicle, debug_mode=False):
             next_pos = vehicle.route[vehicle.route.index(vehicle.position) + 1]
             if next_pos in LANES:
                 end_pos = LANES[next_pos]['in']
-                pygame.draw.line(screen, DEBUG_COLORS['route_preview'], pos, end_pos, 2)
+                pygame.draw.line(screen, DEBUG_COLORS['route_preview'], animated_pos, end_pos, 2)
         
-        # Draw vehicle ID and state
-        font = pygame.font.SysFont('Arial', FONT_SIZE['vehicle_id'])
-        id_text = font.render(f"{id(vehicle) % 1000}", True, BLACK)
+        # Draw vehicle state (only in debug mode)
         state_text = font.render(f"{vehicle.state}", True, BLACK)
-        screen.blit(id_text, (pos[0] - 10, pos[1] - 25))
-        screen.blit(state_text, (pos[0] - 15, pos[1] - 15))
+        screen.blit(state_text, (animated_pos[0] - 15, animated_pos[1] - 15))
         
         # Draw collision detection area
         if vehicle.stopped_for_collision:
-            pygame.draw.circle(screen, DEBUG_COLORS['collision_area'], pos, 25, width=1)
+            pygame.draw.circle(screen, DEBUG_COLORS['collision_area'], animated_pos, 25, width=1)
 
 def draw_car(pos, color, direction, vehicle):
     """Draw a car-like shape at the given position with the given color and direction"""
     screen = get_screen()
     x, y = pos
-    
-    # Apply animation offset based on direction
-    if direction == 'up':
-        y -= vehicle.animation_offset
-    elif direction == 'down':
-        y += vehicle.animation_offset
-    elif direction == 'left':
-        x -= vehicle.animation_offset
-    elif direction == 'right':
-        x += vehicle.animation_offset
     
     # Car dimensions - adjusted by vehicle type
     car_length = 24 * vehicle.size_multiplier  # Slightly larger base size

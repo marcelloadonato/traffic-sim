@@ -151,6 +151,7 @@ class ControlPanel(QWidget):
         self.lr_spin.setRange(0.0001, 0.01)
         self.lr_spin.setValue(0.0003)
         self.lr_spin.setSingleStep(0.0001)
+        self.lr_spin.setDecimals(4)  # Show 4 decimal places
         self.lr_spin.valueChanged.connect(self.learning_rate_changed.emit)
         lr_layout.addWidget(lr_label)
         lr_layout.addWidget(self.lr_spin)
@@ -197,6 +198,7 @@ class ControlPanel(QWidget):
         self.gamma_spin.setRange(0.9, 0.999)
         self.gamma_spin.setValue(0.99)
         self.gamma_spin.setSingleStep(0.001)
+        self.gamma_spin.setDecimals(3)  # Show 3 decimal places
         self.gamma_spin.valueChanged.connect(self.gamma_changed.emit)
         gamma_layout.addWidget(gamma_label)
         gamma_layout.addWidget(self.gamma_spin)
@@ -329,7 +331,7 @@ class ControlPanel(QWidget):
         self.waiting_value.setText(str(waiting_count))
         self.moving_value.setText(str(moving_count))
         self.arrived_value.setText(str(arrived_count))
-        self.satisfaction_value.setText(f"{avg_satisfaction:.1f}")
+        self.satisfaction_value.setText(f"{avg_satisfaction:.3f}")
         self.episode_value.setText(str(episode))
         self.tick_value.setText(str(tick))
         
