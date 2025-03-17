@@ -26,67 +26,87 @@ Key Components:
 
 class Simulation:
     def __init__(self):
-        # Initialize buildings
-        self.buildings = []
-        # Tutorial mode settings
-        self.tutorial_mode = False
-        self.tutorial_step = 0
-        self.tutorial_messages = [
-            "Vehicles spawn and move toward the intersection.",
-            "RL agent observes waiting vehicles and picks a light state.",
-            "Reward reflects commute time and satisfaction—watch it evolve!"
-        ]
-        # Manual control mode
-        self.manual_mode = False
-        # Traffic generation mode
-        self.traffic_mode = "Random"  # Default mode
-        # Current simulation mode
-        self.simulation_mode = "RL"  # Default mode
-        
-        # Add log counter for debug output
-        self.log_counter = 0
-        
-        # Generate buildings in each quadrant
-        self._generate_buildings()
-        
-        # Initialize traffic counts
-        self.traffic_counts = {
-            'north': 0,
-            'south': 0,
-            'east': 0,
-            'west': 0
-        }
-        
-        # Initialize simulation state
-        self.reset()
-        self.episode_ended = False
-        self.current_fps = SPEED_SLIDER['default_fps']
-        self.current_training_steps = TRAINING_SLIDER['default_steps']
-        self.slider_dragging = False
-        self.training_slider_dragging = False
-        
-        # Initialize RL agent
-        self.rl_agent = TrafficRLAgent(self)
-        self.training_in_progress = False
-        
-        # Initialize tensors for GPU acceleration
-        self.vehicle_positions = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 2), device=DEVICE)  # For all possible vehicles
-        self.vehicle_states = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 4), device=DEVICE)  # [waiting, moving, arrived, satisfaction]
-        self.light_states = torch.zeros(2, device=DEVICE)  # [ns_light, ew_light]
-        
-        # Add metrics tracking
-        self.last_arrived_count = 0
-        self.last_flow_update = 0
-        self.total_lanes = 4  # 2 lanes in each direction
-        
-        self.vehicles = []
-        self.current_tick = 0
-        self.ns_light = "red"
-        self.ew_light = "green"
-        self.light_timer = 0
-        self.light_duration = 100
-        self.spawn_probability = 0.1
-        self.max_vehicles = MAX_VEHICLES_PER_LANE * 4
+        try:
+            # Initialize buildings
+            self.buildings = []
+            
+            # Tutorial mode settings
+            self.tutorial_mode = False
+            self.tutorial_step = 0
+            self.tutorial_messages = [
+                "Vehicles spawn and move toward the intersection.",
+                "RL agent observes waiting vehicles and picks a light state.",
+                "Reward reflects commute time and satisfaction—watch it evolve!"
+            ]
+            
+            # Manual control mode
+            self.manual_mode = False
+            
+            # Traffic generation mode
+            self.traffic_mode = "Random"  # Default mode
+            
+            # Current simulation mode
+            self.simulation_mode = "RL"  # Default mode
+            
+            # Add log counter for debug output
+            self.log_counter = 0
+            
+            # Generate buildings in each quadrant
+            self._generate_buildings()
+            
+            # Initialize traffic counts
+            self.traffic_counts = {
+                'north': 0,
+                'south': 0,
+                'east': 0,
+                'west': 0
+            }
+            
+            # Initialize simulation state
+            self.reset()
+            self.episode_ended = False
+            self.current_fps = SPEED_SLIDER['default_fps']
+            self.current_training_steps = TRAINING_SLIDER['default_steps']
+            self.slider_dragging = False
+            self.training_slider_dragging = False
+            
+            # Initialize RL agent
+            try:
+                self.rl_agent = TrafficRLAgent(self)
+                self.training_in_progress = False
+            except Exception as e:
+                print(f"Warning: Failed to initialize RL agent: {e}")
+                self.rl_agent = None
+                self.training_in_progress = False
+            
+            # Initialize tensors for GPU acceleration
+            try:
+                self.vehicle_positions = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 2), device=DEVICE)
+                self.vehicle_states = torch.zeros((MAX_VEHICLES_PER_LANE * 4, 4), device=DEVICE)
+                self.light_states = torch.zeros(2, device=DEVICE)
+            except Exception as e:
+                print(f"Warning: Failed to initialize tensors: {e}")
+                self.vehicle_positions = None
+                self.vehicle_states = None
+                self.light_states = None
+            
+            # Add metrics tracking
+            self.last_arrived_count = 0
+            self.last_flow_update = 0
+            self.total_lanes = 4  # 2 lanes in each direction
+            
+            self.vehicles = []
+            self.current_tick = 0
+            self.ns_light = "red"
+            self.ew_light = "green"
+            self.light_timer = 0
+            self.light_duration = 100
+            self.spawn_probability = 0.1
+            self.max_vehicles = MAX_VEHICLES_PER_LANE * 4
+            
+        except Exception as e:
+            print(f"Error initializing Simulation: {e}")
+            raise
     
     def _generate_buildings(self):
         """Helper method to generate buildings in all four quadrants"""
@@ -251,22 +271,17 @@ class Simulation:
             else:
                 raise
     
+    def get_light_state(self):
+        """Get the current state of the traffic lights"""
+        return (self.ns_light, self.ew_light)
+    
     def update_vehicles(self):
         """Update the state of all vehicles in the simulation"""
-        # Update light state
-        light_state = (self.ns_light, self.ew_light)
-        
-        # List to store vehicles to remove
         vehicles_to_remove = []
+        light_state = self.get_light_state()
         
-        # Update each vehicle
         for vehicle in self.active_vehicles:
             try:
-                # Check if vehicle has arrived at destination
-                if vehicle.state == "arrived":
-                    vehicles_to_remove.append(vehicle)
-                    continue
-                
                 # Get current position index in route
                 current_idx = vehicle.route.index(vehicle.position)
                 if current_idx >= len(vehicle.route) - 1:
@@ -282,14 +297,48 @@ class Simulation:
                 if not current_coords or not next_coords:
                     continue
                 
+                # Skip all checks if vehicle is in intersection
+                if vehicle.position == 'intersection':
+                    vehicle.state = "moving"
+                    vehicle.waiting_time = 0
+                    vehicle.speed = vehicle.base_speed
+                    
+                    # Use a smaller threshold in the intersection for faster movement
+                    intersection_threshold = 50  # Half the normal threshold
+                    
+                    # Update position time
+                    vehicle.position_time += vehicle.speed
+                    
+                    # Calculate progress
+                    progress = min(vehicle.position_time / intersection_threshold, 1.0)
+                    
+                    # Calculate new interpolated position
+                    new_x = current_coords[0] + (next_coords[0] - current_coords[0]) * progress
+                    new_y = current_coords[1] + (next_coords[1] - current_coords[1]) * progress
+                    
+                    # Store new interpolated position
+                    vehicle.interpolated_position = (new_x, new_y)
+                    
+                    # Move to next position when threshold is reached
+                    if progress >= 1.0:
+                        vehicle.position = next_pos
+                        vehicle.position_time = 0
+                        
+                        # Check for arrival at destination
+                        if vehicle.position == vehicle.destination and vehicle.is_at_edge():
+                            vehicle.state = "arrived"
+                            vehicles_to_remove.append(vehicle)
+                    continue
+                
                 # Check if we need to stop
                 should_stop = False
                 
-                # Stop at red or yellow light if approaching intersection
+                # Stop at red light if approaching intersection
                 if vehicle.position in ['north', 'south', 'east', 'west'] and next_pos == 'intersection':
                     ns_light, ew_light = light_state
-                    if ((vehicle.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
-                        (vehicle.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
+                    if ((vehicle.position in ['north', 'south'] and ns_light == "red") or
+                        (vehicle.position in ['east', 'west'] and ew_light == "red")):
+                        # Only stop for red lights, not yellow
                         should_stop = True
                         vehicle.state = "waiting"
                         vehicle.waiting_time += 1
@@ -300,17 +349,26 @@ class Simulation:
                 if not should_stop:
                     for other_vehicle in self.active_vehicles:
                         if other_vehicle != vehicle and other_vehicle.state != "arrived":
+                            # Skip collision check if other vehicle is in intersection
+                            if other_vehicle.position == 'intersection':
+                                continue
                             if vehicle.is_behind(other_vehicle):
-                                should_stop = True
-                                vehicle.state = "waiting"
-                                vehicle.waiting_time += 1
-                                vehicle.speed = 0
-                                break
+                                # Only stop if very close to the vehicle ahead
+                                dx = vehicle.interpolated_position[0] - other_vehicle.interpolated_position[0]
+                                dy = vehicle.interpolated_position[1] - other_vehicle.interpolated_position[1]
+                                distance = (dx * dx + dy * dy) ** 0.5
+                                if distance < 50:  # Reduced from 80
+                                    should_stop = True
+                                    vehicle.state = "waiting"
+                                    vehicle.waiting_time += 1
+                                    vehicle.speed = 0
+                                    break
                 
                 # Update position if not stopped
                 if not should_stop:
                     vehicle.state = "moving"
                     vehicle.waiting_time = 0
+                    vehicle.speed = vehicle.base_speed
                     
                     # Update position time
                     vehicle.position_time += vehicle.speed
@@ -708,260 +766,303 @@ class Simulation:
         # Define lane offsets (positive = right side of road in direction of travel)
         LANE_OFFSET = 15  # pixels from center
         
-        # Starting position with lane offset
+        # Add starting position
+        route.append(start)
+        
+        # Add intersection approach point
         if start == 'north':
-            route.extend([start, (WIDTH//2 + LANE_OFFSET, 50), (WIDTH//2 + LANE_OFFSET, 100)])
+            route.append((WIDTH//2 + LANE_OFFSET, HEIGHT//2 - 100))
         elif start == 'south':
-            route.extend([start, (WIDTH//2 - LANE_OFFSET, HEIGHT-50), (WIDTH//2 - LANE_OFFSET, HEIGHT-100)])
+            route.append((WIDTH//2 - LANE_OFFSET, HEIGHT//2 + 100))
         elif start == 'east':
-            route.extend([start, (WIDTH-50, HEIGHT//2 - LANE_OFFSET), (WIDTH-100, HEIGHT//2 - LANE_OFFSET)])
+            route.append((WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET))
         elif start == 'west':
-            route.extend([start, (50, HEIGHT//2 + LANE_OFFSET), (100, HEIGHT//2 + LANE_OFFSET)])
+            route.append((WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET))
         
-        # Add intersection approach with lane offset
-        if start == 'north':
-            route.extend([(WIDTH//2 + LANE_OFFSET, HEIGHT//2 - 100), (WIDTH//2 + LANE_OFFSET, HEIGHT//2 - 50)])
-        elif start == 'south':
-            route.extend([(WIDTH//2 - LANE_OFFSET, HEIGHT//2 + 100), (WIDTH//2 - LANE_OFFSET, HEIGHT//2 + 50)])
-        elif start == 'east':
-            route.extend([(WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET), (WIDTH//2 + 50, HEIGHT//2 - LANE_OFFSET)])
-        elif start == 'west':
-            route.extend([(WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET), (WIDTH//2 - 50, HEIGHT//2 + LANE_OFFSET)])
+        # Add intersection marker
+        route.append('intersection')
         
-        # Add intersection waypoint with offset based on turn
-        if (start == 'north' and end == 'west') or (start == 'east' and end == 'south'):
-            route.extend([
-                'intersection',
-                (WIDTH//2 - 25, HEIGHT//2 - 25),  # Smooth turn point
-                (WIDTH//2 - 50, HEIGHT//2 + LANE_OFFSET),  # Exit point with proper lane
-                (WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET)  # Past intersection
-            ])
-        elif (start == 'north' and end == 'east') or (start == 'west' and end == 'south'):
-            route.extend([
-                'intersection',
-                (WIDTH//2 + 25, HEIGHT//2 - 25),  # Smooth turn point
-                (WIDTH//2 + 50, HEIGHT//2 - LANE_OFFSET),  # Exit point with proper lane
-                (WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET)  # Past intersection
-            ])
-        elif (start == 'south' and end == 'west') or (start == 'east' and end == 'north'):
-            route.extend([
-                'intersection',
-                (WIDTH//2 - 25, HEIGHT//2 + 25),  # Smooth turn point
-                (WIDTH//2 - 50, HEIGHT//2 + LANE_OFFSET),  # Exit point with proper lane
-                (WIDTH//2 - 100, HEIGHT//2 + LANE_OFFSET)  # Past intersection
-            ])
-        elif (start == 'south' and end == 'east') or (start == 'west' and end == 'north'):
-            route.extend([
-                'intersection',
-                (WIDTH//2 + 25, HEIGHT//2 + 25),  # Smooth turn point
-                (WIDTH//2 + 50, HEIGHT//2 - LANE_OFFSET),  # Exit point with proper lane
-                (WIDTH//2 + 100, HEIGHT//2 - LANE_OFFSET)  # Past intersection
-            ])
-        elif start == 'north' and end == 'south':
-            route.extend([
-                'intersection',
-                (WIDTH//2 + LANE_OFFSET, HEIGHT//2),  # Keep right through intersection
-                (WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 25),  # Exit point
-                (WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 50),  # Past intersection
-                (WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 100)  # Further past intersection
-            ])
-        elif start == 'south' and end == 'north':
-            route.extend([
-                'intersection',
-                (WIDTH//2 - LANE_OFFSET, HEIGHT//2),  # Keep right through intersection
-                (WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 25),  # Exit point
-                (WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 50),  # Past intersection
-                (WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 100)  # Further past intersection
-            ])
-        elif start == 'east' and end == 'west':
-            route.extend([
-                'intersection',
-                (WIDTH//2, HEIGHT//2 - LANE_OFFSET),  # Keep right through intersection
-                (WIDTH//2 - 25, HEIGHT//2 - LANE_OFFSET),  # Exit point
-                (WIDTH//2 - 50, HEIGHT//2 - LANE_OFFSET),  # Past intersection
-                (WIDTH//2 - 100, HEIGHT//2 - LANE_OFFSET)  # Further past intersection
-            ])
-        elif start == 'west' and end == 'east':
-            route.extend([
-                'intersection',
-                (WIDTH//2, HEIGHT//2 + LANE_OFFSET),  # Keep right through intersection
-                (WIDTH//2 + 25, HEIGHT//2 + LANE_OFFSET),  # Exit point
-                (WIDTH//2 + 50, HEIGHT//2 + LANE_OFFSET),  # Past intersection
-                (WIDTH//2 + 100, HEIGHT//2 + LANE_OFFSET)  # Further past intersection
-            ])
-        
-        # Add exit path with proper lane offset
+        # Add intersection exit point
         if end == 'north':
-            route.extend([(WIDTH//2 - LANE_OFFSET, 100), (WIDTH//2 - LANE_OFFSET, 50), (WIDTH//2 - LANE_OFFSET, 0)])
+            route.append((WIDTH//2 - LANE_OFFSET, HEIGHT//2 - 100))
         elif end == 'south':
-            route.extend([(WIDTH//2 + LANE_OFFSET, HEIGHT-100), (WIDTH//2 + LANE_OFFSET, HEIGHT-50), (WIDTH//2 + LANE_OFFSET, HEIGHT)])
+            route.append((WIDTH//2 + LANE_OFFSET, HEIGHT//2 + 100))
         elif end == 'east':
-            route.extend([(WIDTH-100, HEIGHT//2 + LANE_OFFSET), (WIDTH-50, HEIGHT//2 + LANE_OFFSET), (WIDTH, HEIGHT//2 + LANE_OFFSET)])
+            route.append((WIDTH//2 + 100, HEIGHT//2 + LANE_OFFSET))
         elif end == 'west':
-            route.extend([(100, HEIGHT//2 - LANE_OFFSET), (50, HEIGHT//2 - LANE_OFFSET), (0, HEIGHT//2 - LANE_OFFSET)])
+            route.append((WIDTH//2 - 100, HEIGHT//2 - LANE_OFFSET))
+        
+        # Add destination
+        route.append(end)
         
         return route
 
-    def create_test_vehicle(self):
-        """Create a single test vehicle moving from east to west"""
-        # Set test mode flag
-        self.test_mode = True
+    def create_test_vehicles(self):
+        """Create four test vehicles moving in opposite directions (east-west and north-south)"""
+        # Create east-bound vehicle
+        east_route = self.create_route('west', 'east')
+        east_vehicle = Vehicle(
+            route=east_route,
+            position='west',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        east_vehicle.destination = 'east'
+        east_vehicle.interpolated_position = (0, HEIGHT//2 + 15)  # +15 for right lane
+        east_vehicle.base_speed = 2
+        east_vehicle.speed = 2
+        east_vehicle.state = "moving"
+        east_vehicle.position_time = 0
         
-        # Clear any existing vehicles
-        self.active_vehicles = []
-        self.removed_vehicles = []
-        
-        # Create a simple route from east to west
-        route = [
-            'east',
-            (WIDTH-100, HEIGHT//2),
-            (WIDTH-50, HEIGHT//2),
-            (WIDTH//2 + 50, HEIGHT//2),
-            'intersection',
-            (WIDTH//2 - 50, HEIGHT//2),
-            (50, HEIGHT//2),
-            (0, HEIGHT//2),
-            'west'
-        ]
-        
-        # Create the test vehicle with very slow movement settings
-        test_vehicle = Vehicle(
-            route=route,
+        # Create west-bound vehicle
+        west_route = self.create_route('east', 'west')
+        west_vehicle = Vehicle(
+            route=west_route,
             position='east',
             vehicle_type="car",
-            position_threshold=200  # Much higher threshold for slower movement
+            position_threshold=100
         )
-        test_vehicle.destination = 'west'
-        test_vehicle.interpolated_position = None
-        test_vehicle.id = "TEST_VEHICLE"
+        west_vehicle.destination = 'west'
+        west_vehicle.interpolated_position = (WIDTH, HEIGHT//2 - 15)  # -15 for left lane
+        west_vehicle.base_speed = 2
+        west_vehicle.speed = 2
+        west_vehicle.state = "moving"
+        west_vehicle.position_time = 0
         
-        # Set initial interpolated position
-        test_vehicle.interpolated_position = (WIDTH, HEIGHT//2)
+        # Create north-bound vehicle
+        north_route = self.create_route('south', 'north')
+        north_vehicle = Vehicle(
+            route=north_route,
+            position='south',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        north_vehicle.destination = 'north'
+        north_vehicle.interpolated_position = (WIDTH//2 + 15, HEIGHT)  # +15 for right lane
+        north_vehicle.base_speed = 2
+        north_vehicle.speed = 2
+        north_vehicle.state = "moving"
+        north_vehicle.position_time = 0
         
-        # Override speed settings for test vehicle with very slow speed
-        test_vehicle.base_speed = 1  # Very slow speed
-        test_vehicle.speed = 1
-        test_vehicle.last_speed = 1
+        # Create south-bound vehicle
+        south_route = self.create_route('north', 'south')
+        south_vehicle = Vehicle(
+            route=south_route,
+            position='north',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        south_vehicle.destination = 'south'
+        south_vehicle.interpolated_position = (WIDTH//2 - 15, 0)  # -15 for left lane
+        south_vehicle.base_speed = 2
+        south_vehicle.speed = 2
+        south_vehicle.state = "moving"
+        south_vehicle.position_time = 0
         
-        # Add vehicle to simulation
-        self.active_vehicles.append(test_vehicle)
-        print("\n=== Test Vehicle Created ===")
-        print(f"Starting Position: east")
-        print(f"Destination: west")
-        print(f"Route: {route}")
-        print(f"Initial Interpolated Position: {test_vehicle.interpolated_position}")
-        print(f"Position Threshold: {test_vehicle.position_threshold}")
-        print(f"Base Speed: {test_vehicle.base_speed}")
-        print("=========================\n")
+        # Add vehicles to simulation
+        self.active_vehicles.extend([east_vehicle, west_vehicle, north_vehicle, south_vehicle])
         
-        return test_vehicle
+        return east_vehicle, west_vehicle, north_vehicle, south_vehicle
 
     def run_test_mode(self):
-        """Run simulation in test mode with a single vehicle"""
-        # Create test vehicle
-        test_vehicle = self.create_test_vehicle()
+        """Run simulation in test mode with two vehicles"""
+        # Create test vehicles
+        east_vehicle, west_vehicle, north_vehicle, south_vehicle = self.create_test_vehicles()
         
-        # Set initial light states
+        # Set initial light states to green for east-west
         self.ns_light = "red"
         self.ew_light = "green"
+        self.light_timer = 50  # Start with 50 ticks for green
+        self.test_mode = True  # Mark as test mode
         
-        # Track previous values for change detection
-        prev_state = None
-        prev_position = None
-        prev_route_index = None
-        prev_interpolated = None
-        last_logged_tick = -10  # Ensure first tick is logged
+        # Track vehicle states
+        last_logged_tick = -10
         
-        print("\n=== Initial Route ===")
-        for i, point in enumerate(test_vehicle.route):
-            print(f"Point {i}: {point}")
+        print("\n=== Starting Test ===")
+        print("Initial States:")
+        print(f"East Vehicle: pos={east_vehicle.position}, state={east_vehicle.state}")
+        print(f"West Vehicle: pos={west_vehicle.position}, state={west_vehicle.state}")
+        print(f"North Vehicle: pos={north_vehicle.position}, state={north_vehicle.state}")
+        print(f"South Vehicle: pos={south_vehicle.position}, state={south_vehicle.state}")
         print("===================\n")
         
-        while self.running and test_vehicle in self.active_vehicles:
-            # Handle events
-            self.handle_events()
+        while True:
+            # Update light timer and states
+            self.light_timer -= 1
+            if self.light_timer <= 0:
+                # Switch lights
+                if self.ns_light == "red" and self.ew_light == "green":
+                    self.ew_light = "yellow"
+                    self.light_timer = 3  # Yellow for 3 ticks
+                elif self.ns_light == "red" and self.ew_light == "yellow":
+                    self.ns_light = "green"
+                    self.ew_light = "red"
+                    self.light_timer = 50  # Green for 50 ticks
+                elif self.ns_light == "green" and self.ew_light == "red":
+                    self.ns_light = "yellow"
+                    self.light_timer = 3  # Yellow for 3 ticks
+                elif self.ns_light == "yellow" and self.ew_light == "red":
+                    self.ns_light = "red"
+                    self.ew_light = "green"
+                    self.light_timer = 50  # Green for 50 ticks
             
-            # Update traffic lights
-            self.update_traffic_lights()
-            
-            # Store pre-update interpolated position
-            pre_update_pos = test_vehicle.interpolated_position
+            # Store pre-update positions for movement tracking
+            pre_east_pos = east_vehicle.interpolated_position if east_vehicle in self.active_vehicles else None
+            pre_west_pos = west_vehicle.interpolated_position if west_vehicle in self.active_vehicles else None
+            pre_north_pos = north_vehicle.interpolated_position if north_vehicle in self.active_vehicles else None
+            pre_south_pos = south_vehicle.interpolated_position if south_vehicle in self.active_vehicles else None
             
             # Update vehicles
             self.update_vehicles()
             
-            # Get current route index
-            current_route_index = test_vehicle.route.index(test_vehicle.position)
-            
-            # Calculate movement delta if we have both positions
-            if pre_update_pos and test_vehicle.interpolated_position:
-                delta_x = test_vehicle.interpolated_position[0] - pre_update_pos[0]
-                delta_y = test_vehicle.interpolated_position[1] - pre_update_pos[1]
+            # Calculate movement deltas
+            if east_vehicle in self.active_vehicles and pre_east_pos:
+                east_delta_x = east_vehicle.interpolated_position[0] - pre_east_pos[0]
+                east_delta_y = east_vehicle.interpolated_position[1] - pre_east_pos[1]
             else:
-                delta_x = delta_y = 0
-                
-            # Detect significant position changes or state changes
-            position_changed = (prev_interpolated != test_vehicle.interpolated_position)
-            route_point_changed = (prev_route_index != current_route_index)
-            state_changed = (prev_state != test_vehicle.state)
+                east_delta_x = east_delta_y = 0
             
-            # Log on significant changes or regular intervals
+            if west_vehicle in self.active_vehicles and pre_west_pos:
+                west_delta_x = west_vehicle.interpolated_position[0] - pre_west_pos[0]
+                west_delta_y = west_vehicle.interpolated_position[1] - pre_west_pos[1]
+            else:
+                west_delta_x = west_delta_y = 0
+            
+            if north_vehicle in self.active_vehicles and pre_north_pos:
+                north_delta_x = north_vehicle.interpolated_position[0] - pre_north_pos[0]
+                north_delta_y = north_vehicle.interpolated_position[1] - pre_north_pos[1]
+            else:
+                north_delta_x = north_delta_y = 0
+            
+            if south_vehicle in self.active_vehicles and pre_south_pos:
+                south_delta_x = south_vehicle.interpolated_position[0] - pre_south_pos[0]
+                south_delta_y = south_vehicle.interpolated_position[1] - pre_south_pos[1]
+            else:
+                south_delta_x = south_delta_y = 0
+            
+            # Log status every 10 ticks or on significant changes
             should_log = (
-                self.current_tick - last_logged_tick >= 10 or  # Regular interval
-                route_point_changed or                         # Route point change
-                state_changed or                              # State change
-                (abs(delta_x) > 50 or abs(delta_y) > 50)     # Large position change
+                self.current_tick - last_logged_tick >= 10 or
+                abs(east_delta_x) > 10 or abs(east_delta_y) > 10 or
+                abs(west_delta_x) > 10 or abs(west_delta_y) > 10 or
+                abs(north_delta_x) > 10 or abs(north_delta_y) > 10 or
+                abs(south_delta_x) > 10 or abs(south_delta_y) > 10 or
+                (east_vehicle in self.active_vehicles and east_vehicle.state == "waiting") or
+                (west_vehicle in self.active_vehicles and west_vehicle.state == "waiting") or
+                (north_vehicle in self.active_vehicles and north_vehicle.state == "waiting") or
+                (south_vehicle in self.active_vehicles and south_vehicle.state == "waiting")
             )
             
             if should_log:
-                print(f"\n=== Movement Analysis at Tick {self.current_tick} ===")
-                print(f"Current Route Point: {test_vehicle.position}")
-                print(f"Route Index: {current_route_index}")
-                if current_route_index < len(test_vehicle.route) - 1:
-                    print(f"Next Route Point: {test_vehicle.route[current_route_index + 1]}")
+                print(f"\n=== Tick {self.current_tick} ===")
+                print(f"Light States: NS={self.ns_light}, EW={self.ew_light}, Timer={self.light_timer}")
+                if east_vehicle in self.active_vehicles:
+                    print(f"East Vehicle:")
+                    print(f"Position: {east_vehicle.position}")
+                    print(f"State: {east_vehicle.state}")
+                    print(f"Coordinates: {east_vehicle.interpolated_position}")
+                    print(f"Movement: dx={east_delta_x:.2f}, dy={east_delta_y:.2f}")
+                    print(f"Progress: {(east_vehicle.position_time / east_vehicle.position_threshold * 100):.2f}%\n")
                 
-                print(f"\nInterpolation Details:")
-                print(f"Previous Position: {pre_update_pos}")
-                print(f"Current Position: {test_vehicle.interpolated_position}")
-                print(f"Movement Delta: dx={delta_x:.2f}, dy={delta_y:.2f}")
-                print(f"Position Time: {test_vehicle.position_time}")
-                print(f"Progress: {(test_vehicle.position_time / test_vehicle.position_threshold):.2%}")
+                if west_vehicle in self.active_vehicles:
+                    print(f"West Vehicle:")
+                    print(f"Position: {west_vehicle.position}")
+                    print(f"State: {west_vehicle.state}")
+                    print(f"Coordinates: {west_vehicle.interpolated_position}")
+                    print(f"Movement: dx={west_delta_x:.2f}, dy={west_delta_y:.2f}")
+                    print(f"Progress: {(west_vehicle.position_time / west_vehicle.position_threshold * 100):.2f}%\n")
                 
-                if route_point_changed:
-                    print(f"\n!!! Route Point Changed !!!")
-                    print(f"Previous Point: {prev_position}")
-                    print(f"New Point: {test_vehicle.position}")
+                if north_vehicle in self.active_vehicles:
+                    print(f"North Vehicle:")
+                    print(f"Position: {north_vehicle.position}")
+                    print(f"State: {north_vehicle.state}")
+                    print(f"Coordinates: {north_vehicle.interpolated_position}")
+                    print(f"Movement: dx={north_delta_x:.2f}, dy={north_delta_y:.2f}")
+                    print(f"Progress: {(north_vehicle.position_time / north_vehicle.position_threshold * 100):.2f}%\n")
                 
-                if abs(delta_x) > 50 or abs(delta_y) > 50:
-                    print(f"\n!!! Large Position Change Detected !!!")
-                    print(f"Delta X: {delta_x:.2f}")
-                    print(f"Delta Y: {delta_y:.2f}")
+                if south_vehicle in self.active_vehicles:
+                    print(f"South Vehicle:")
+                    print(f"Position: {south_vehicle.position}")
+                    print(f"State: {south_vehicle.state}")
+                    print(f"Coordinates: {south_vehicle.interpolated_position}")
+                    print(f"Movement: dx={south_delta_x:.2f}, dy={south_delta_y:.2f}")
+                    print(f"Progress: {(south_vehicle.position_time / south_vehicle.position_threshold * 100):.2f}%")
                 
-                print("=" * 40)
+                print("========================================")
                 last_logged_tick = self.current_tick
             
-            # Update previous values
-            prev_state = test_vehicle.state
-            prev_position = test_vehicle.position
-            prev_route_index = current_route_index
-            prev_interpolated = test_vehicle.interpolated_position
-            
-            # Draw everything
-            self.draw(None)
-            
-            # Control simulation speed
-            clock = get_clock()
-            clock.tick(30)
-            
-            # Increment tick
+            # Increment tick counter
             self.current_tick += 1
             
-            # End test if vehicle arrives
-            if test_vehicle.state == "arrived":
+            # Check if all vehicles have completed their routes
+            if not self.active_vehicles:
                 print("\n=== Test Complete ===")
-                print(f"Total Ticks: {self.current_tick}")
-                print(f"Final Route Point: {test_vehicle.position}")
-                print(f"Final Interpolated Position: {test_vehicle.interpolated_position}")
-                print(f"Final State: {test_vehicle.state}")
-                print("===================\n")
-                break 
+                print("All vehicles have completed their routes")
+                break
+
+    def create_test_vehicles(self):
+        """Create four test vehicles moving in opposite directions (east-west and north-south)"""
+        # Create east-bound vehicle
+        east_route = self.create_route('west', 'east')
+        east_vehicle = Vehicle(
+            route=east_route,
+            position='west',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        east_vehicle.destination = 'east'
+        east_vehicle.interpolated_position = (0, HEIGHT//2 + 15)  # +15 for right lane
+        east_vehicle.base_speed = 2
+        east_vehicle.speed = 2
+        east_vehicle.state = "moving"
+        east_vehicle.position_time = 0
+        
+        # Create west-bound vehicle
+        west_route = self.create_route('east', 'west')
+        west_vehicle = Vehicle(
+            route=west_route,
+            position='east',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        west_vehicle.destination = 'west'
+        west_vehicle.interpolated_position = (WIDTH, HEIGHT//2 - 15)  # -15 for left lane
+        west_vehicle.base_speed = 2
+        west_vehicle.speed = 2
+        west_vehicle.state = "moving"
+        west_vehicle.position_time = 0
+        
+        # Create north-bound vehicle
+        north_route = self.create_route('south', 'north')
+        north_vehicle = Vehicle(
+            route=north_route,
+            position='south',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        north_vehicle.destination = 'north'
+        north_vehicle.interpolated_position = (WIDTH//2 + 15, HEIGHT)  # +15 for right lane
+        north_vehicle.base_speed = 2
+        north_vehicle.speed = 2
+        north_vehicle.state = "moving"
+        north_vehicle.position_time = 0
+        
+        # Create south-bound vehicle
+        south_route = self.create_route('north', 'south')
+        south_vehicle = Vehicle(
+            route=south_route,
+            position='north',
+            vehicle_type="car",
+            position_threshold=100
+        )
+        south_vehicle.destination = 'south'
+        south_vehicle.interpolated_position = (WIDTH//2 - 15, 0)  # -15 for left lane
+        south_vehicle.base_speed = 2
+        south_vehicle.speed = 2
+        south_vehicle.state = "moving"
+        south_vehicle.position_time = 0
+        
+        # Add vehicles to simulation
+        self.active_vehicles.extend([east_vehicle, west_vehicle, north_vehicle, south_vehicle])
+        
+        return east_vehicle, west_vehicle, north_vehicle, south_vehicle 

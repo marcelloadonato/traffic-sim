@@ -13,116 +13,43 @@ def get_vehicle_position(vehicle):
         if vehicle.commute_time < 5:
             return LANES[vehicle.position]['out']
         
-        # If approaching intersection, use queue positions based on position_time
-        queue_positions = LANES[vehicle.position]['queue']
+        # Calculate position along the lane
         progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
-        
-        # If vehicle is waiting at the light, pull up to the intersection
-        if vehicle.state == "waiting" and vehicle.position_time >= vehicle.position_threshold:
-            return LANES[vehicle.position]['in']
-        
-        # Calculate position along the queue
-        if len(queue_positions) > 0:
-            if progress < 0.5:  # First half of movement - use queue positions
-                queue_idx = min(int(progress * len(queue_positions)), len(queue_positions) - 1)
-                return queue_positions[queue_idx]
-            else:  # Second half - approach the intersection entrance
-                # Interpolate between last queue position and intersection entrance
-                last_queue = queue_positions[-1]
-                intersection = LANES[vehicle.position]['in']
-                t = (progress - 0.5) * 2  # Scale 0.5-1.0 to 0-1
-                return (
-                    last_queue[0] + (intersection[0] - last_queue[0]) * t,
-                    last_queue[1] + (intersection[1] - last_queue[1]) * t
-                )
-        else:
-            # Fallback if no queue positions
-            start = LANES[vehicle.position]['out']
-            end = LANES[vehicle.position]['in']
-            return (
-                start[0] + (end[0] - start[0]) * progress,
-                start[1] + (end[1] - start[1]) * progress
-            )
+        start = LANES[vehicle.position]['out']
+        end = LANES[vehicle.position]['in']
+        return (
+            start[0] + (end[0] - start[0]) * progress,
+            start[1] + (end[1] - start[1]) * progress
+        )
     
     # If at the intersection
     elif vehicle.position == 'intersection':
         # Get current route index and waypoints
         route_idx = vehicle.route.index('intersection')
         
-        # Find the next tuple waypoint after 'intersection'
-        next_waypoints = []
-        for i in range(route_idx + 1, min(route_idx + 4, len(vehicle.route))):
-            if isinstance(vehicle.route[i], tuple):
-                next_waypoints.append(vehicle.route[i])
+        # Get previous and next positions
+        prev_pos = vehicle.route[route_idx-1] if route_idx > 0 else None
+        next_pos = vehicle.route[route_idx+1] if route_idx + 1 < len(vehicle.route) else None
         
-        # If we have waypoints, use them
-        if next_waypoints:
-            # Progress through waypoints sequentially
-            progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
-            total_waypoints = len(next_waypoints)
+        if prev_pos and next_pos and isinstance(prev_pos, tuple) and isinstance(next_pos, tuple):
+            # Calculate progress through intersection
+            progress = min(vehicle.position_time / 50, 1.0)  # Use 50 ticks for intersection
             
-            # Calculate which segment we're in and the progress within that segment
-            segment_idx = min(int(progress * total_waypoints), total_waypoints - 1)
-            segment_progress = (progress * total_waypoints) - segment_idx
-            segment_progress = max(0, min(1, segment_progress))  # Clamp between 0-1
-            
-            # Get waypoint coordinates
-            if segment_idx == 0:
-                # First segment: from entry point to first waypoint
-                if route_idx > 0 and vehicle.route[route_idx-1] in LANES:
-                    entry_point = LANES[vehicle.route[route_idx-1]]['in']
-                else:
-                    # If no valid previous position, use first waypoint
-                    entry_point = next_waypoints[0]
-                    segment_progress = 0  # Stay at first waypoint
-                target = next_waypoints[0]
-            else:
-                # Later segments: between waypoints
-                entry_point = next_waypoints[segment_idx-1]
-                # For the last segment, ensure we move towards the exit point
-                if segment_idx >= len(next_waypoints) - 1:
-                    # Find the next non-tuple position (should be exit direction)
-                    exit_direction = None
-                    for i in range(route_idx + 1, len(vehicle.route)):
-                        if isinstance(vehicle.route[i], str) and vehicle.route[i] != 'intersection':
-                            exit_direction = vehicle.route[i]
-                            break
-                    
-                    if exit_direction and exit_direction in LANES:
-                        target = LANES[exit_direction]['in']
-                    else:
-                        target = next_waypoints[-1]
-                else:
-                    target = next_waypoints[segment_idx]
-            
-            # Linear interpolation between points
+            # Linear interpolation between waypoints
             return (
-                entry_point[0] + (target[0] - entry_point[0]) * segment_progress,
-                entry_point[1] + (target[1] - entry_point[1]) * segment_progress
+                prev_pos[0] + (next_pos[0] - prev_pos[0]) * progress,
+                prev_pos[1] + (next_pos[1] - prev_pos[1]) * progress
             )
         else:
-            # If no waypoints found, try to use entry and exit points
-            prev_pos = vehicle.route[route_idx-1] if route_idx > 0 else None
-            next_pos = vehicle.route[route_idx+1] if route_idx + 1 < len(vehicle.route) else None
-            
-            if prev_pos in LANES and next_pos in LANES:
-                entry = LANES[prev_pos]['in']
-                exit = LANES[next_pos]['in']
-                progress = min(vehicle.position_time / vehicle.position_threshold, 1.0)
-                return (
-                    entry[0] + (exit[0] - entry[0]) * progress,
-                    entry[1] + (exit[1] - entry[1]) * progress
-                )
-            else:
-                # Ultimate fallback - use center of intersection
-                return (WIDTH//2, HEIGHT//2)
+            # Fallback - use center of intersection
+            return (WIDTH//2, HEIGHT//2)
     
     # Handle intermediate positions (tuples)
     elif isinstance(vehicle.position, tuple):
         return vehicle.position
     
     # Default fallback
-    return (WIDTH//2, HEIGHT//2)
+    return LANES.get(vehicle.position, {}).get('in', (WIDTH//2, HEIGHT//2))
 
 def get_vehicle_direction(vehicle):
     """Determine the direction a vehicle should face based on its current position and next position"""
@@ -223,15 +150,17 @@ get_vehicle_direction.previous = {}
 
 def check_collision(vehicle, other_vehicles, light_state):
     """Check for collisions with other vehicles and traffic lights"""
+    # Skip ALL collision checks if vehicle is in the intersection
+    if vehicle.position == 'intersection':
+        vehicle.stopped_for_collision = False
+        return False
+    
     # Get current vehicle position
     x, y = get_vehicle_position(vehicle)
     
     # Define safe distances
-    SAFE_DISTANCE_SAME_LANE = 50  # Increased from default to ensure more space between vehicles
-    SAFE_DISTANCE_INTERSECTION = 40  # Safe distance in intersection
-    
-    # Check if vehicle is at intersection
-    is_at_intersection = vehicle.position == 'intersection'
+    SAFE_DISTANCE_SAME_LANE = 50  # Reduced from 80 to allow closer following
+    LANE_WIDTH = 40  # Width of a single lane
     
     # Check if vehicle is approaching intersection
     is_approaching = vehicle.position in ['north', 'south', 'east', 'west']
@@ -244,29 +173,41 @@ def check_collision(vehicle, other_vehicles, light_state):
     if is_approaching and next_pos == 'intersection':
         # Get light states
         ns_light, ew_light = light_state
-        # Check if light is red or yellow for this direction
-        if ((vehicle.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
-            (vehicle.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
+        # Check if light is red for this direction
+        if ((vehicle.position in ['north', 'south'] and ns_light == "red") or
+            (vehicle.position in ['east', 'west'] and ew_light == "red")):
+            
             # Get queue positions for this lane
             queue_positions = LANES[vehicle.position]['queue']
             if queue_positions:
                 # Get the last queue position (closest to intersection)
                 last_queue = queue_positions[-1]
+                intersection_entry = LANES[vehicle.position]['in']
                 
-                # Calculate distance to the last queue position
+                # Calculate distances
                 if vehicle.position in ['north', 'south']:
                     distance_to_queue = abs(y - last_queue[1])
+                    distance_to_intersection = abs(y - intersection_entry[1])
                 else:
                     distance_to_queue = abs(x - last_queue[0])
+                    distance_to_intersection = abs(x - intersection_entry[0])
                 
-                # Stop if we're close enough to the queue position
-                if distance_to_queue < SAFE_DISTANCE_SAME_LANE:
-                    vehicle.stopped_for_collision = True
-                    return True
+                # Only stop if we're not too close to the intersection
+                COMMIT_DISTANCE = 30  # Reduced from 50 to allow vehicles to commit later
+                
+                if distance_to_intersection > COMMIT_DISTANCE:
+                    # Stop if we're close enough to the queue position
+                    if distance_to_queue < SAFE_DISTANCE_SAME_LANE:
+                        vehicle.stopped_for_collision = True
+                        return True
     
-    # Check for vehicles ahead in the same lane or approaching the same intersection point
+    # Check for collisions with other vehicles
     for other in other_vehicles:
         if other != vehicle and other.state != "arrived":
+            # Skip collision check if other vehicle is in intersection
+            if other.position == 'intersection':
+                continue
+            
             # Get other vehicle's position
             other_x, other_y = get_vehicle_position(other)
             
@@ -276,47 +217,27 @@ def check_collision(vehicle, other_vehicles, light_state):
             distance = (dx * dx + dy * dy) ** 0.5
             
             # Check if vehicles are in the same lane
-            same_lane = vehicle.position == other.position
+            same_lane = False
+            if vehicle.position in ['north', 'south'] and other.position in ['north', 'south']:
+                same_lane = abs(x - other_x) < LANE_WIDTH
+            elif vehicle.position in ['east', 'west'] and other.position in ['east', 'west']:
+                same_lane = abs(y - other_y) < LANE_WIDTH
             
-            # Check if they're approaching the same intersection point
-            approaching_same_intersection = (
-                is_approaching and 
-                other.position == 'intersection' and 
-                next_pos == 'intersection'
-            )
-            
-            # Check if they're both in the intersection
-            both_in_intersection = (
-                is_at_intersection and 
-                other.position == 'intersection'
-            )
-            
-            # Determine required safe distance based on situation
-            required_distance = SAFE_DISTANCE_SAME_LANE if same_lane else SAFE_DISTANCE_INTERSECTION
-            
-            # Additional check for vehicles in front
-            if same_lane:
-                # For north-south lanes
-                if vehicle.position in ['north', 'south']:
-                    # Check if other vehicle is ahead (using y-coordinate)
-                    if (vehicle.position == 'north' and other_y < y) or \
-                       (vehicle.position == 'south' and other_y > y):
-                        if abs(dy) < SAFE_DISTANCE_SAME_LANE and abs(dx) < 20:  # 20px lateral tolerance
-                            vehicle.stopped_for_collision = True
-                            return True
-                # For east-west lanes
-                elif vehicle.position in ['east', 'west']:
-                    # Check if other vehicle is ahead (using x-coordinate)
-                    if (vehicle.position == 'east' and other_x > x) or \
-                       (vehicle.position == 'west' and other_x < x):
-                        if abs(dx) < SAFE_DISTANCE_SAME_LANE and abs(dy) < 20:  # 20px lateral tolerance
-                            vehicle.stopped_for_collision = True
-                            return True
-            
-            # Stop if too close to another vehicle in intersection
-            if (approaching_same_intersection or both_in_intersection) and distance < required_distance:
-                vehicle.stopped_for_collision = True
-                return True
+            # Only stop for vehicles in the same lane that are too close
+            if same_lane and distance < SAFE_DISTANCE_SAME_LANE:
+                # Check if other vehicle is ahead in the same direction
+                if vehicle.position == 'north' and y > other_y:
+                    vehicle.stopped_for_collision = True
+                    return True
+                elif vehicle.position == 'south' and y < other_y:
+                    vehicle.stopped_for_collision = True
+                    return True
+                elif vehicle.position == 'east' and x < other_x:
+                    vehicle.stopped_for_collision = True
+                    return True
+                elif vehicle.position == 'west' and x > other_x:
+                    vehicle.stopped_for_collision = True
+                    return True
     
     vehicle.stopped_for_collision = False
     return False 

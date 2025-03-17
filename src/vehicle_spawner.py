@@ -74,23 +74,23 @@ def spawn_vehicles(current_tick, spawn_schedule, active_vehicles, simulation):
                         route=route,
                         position=start_pos,
                         vehicle_type=random.choice(["car", "van", "truck"]),
-                        position_threshold=100
+                        position_threshold=50  # Reduced from 80 for smoother movement
                     )
                     vehicle.destination = end_pos
                     
                     # Set initial interpolated position
                     vehicle.interpolated_position = spawn_coords
                     
-                    # Set appropriate speeds for vehicle type
+                    # Set appropriate speeds for vehicle type with increased base speeds
                     if vehicle.vehicle_type == "truck":
-                        vehicle.base_speed = 2
-                        vehicle.speed = 2
-                    elif vehicle.vehicle_type == "van":
-                        vehicle.base_speed = 3
+                        vehicle.base_speed = 3  # Increased from 2
                         vehicle.speed = 3
-                    else:  # car
-                        vehicle.base_speed = 4
+                    elif vehicle.vehicle_type == "van":
+                        vehicle.base_speed = 4  # Increased from 3
                         vehicle.speed = 4
+                    else:  # car
+                        vehicle.base_speed = 5  # Increased from 4
+                        vehicle.speed = 5
                     
                     # Initialize movement state
                     vehicle.state = "moving"

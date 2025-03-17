@@ -126,21 +126,25 @@ class Vehicle:
         other_dx = other_vehicle.interpolated_position[0] - self.interpolated_position[0]
         other_dy = other_vehicle.interpolated_position[1] - self.interpolated_position[1]
         
-        # Check if other vehicle is in our path and close enough to matter
+        # Define lane width and safe distance
+        LANE_WIDTH = 40  # Width of a single lane
+        SAFE_DISTANCE = 80  # Reduced from 150 to allow closer following
+        
+        # Check if vehicles are in different lanes
         if abs(dx) > abs(dy):  # Moving horizontally
-            if abs(other_dy) > 30:  # Not in same lane
-                return False
+            if abs(other_dy) > LANE_WIDTH:
+                return False  # Different lanes
             if dx > 0:  # Moving right
-                return other_dx > 0 and other_dx < 100
+                return other_dx > 0 and other_dx < SAFE_DISTANCE
             else:  # Moving left
-                return other_dx < 0 and other_dx > -100
+                return other_dx < 0 and other_dx > -SAFE_DISTANCE
         else:  # Moving vertically
-            if abs(other_dx) > 30:  # Not in same lane
-                return False
+            if abs(other_dx) > LANE_WIDTH:
+                return False  # Different lanes
             if dy > 0:  # Moving down
-                return other_dy > 0 and other_dy < 100
+                return other_dy > 0 and other_dy < SAFE_DISTANCE
             else:  # Moving up
-                return other_dy < 0 and other_dy > -100
+                return other_dy < 0 and other_dy > -SAFE_DISTANCE
     
     def _determine_route(self):
         """Create a complete route from start to destination with proper waypoints."""
@@ -259,91 +263,55 @@ class Vehicle:
         
         return route
     
-    def update(self, light_state, vehicles=None):
-        """Update vehicle state and position"""
-        self.total_ticks += 1
+    def update(self, simulation):
+        """Update the vehicle's state and position"""
+        # Get current traffic light states
+        ns_light = simulation.traffic_lights['ns']
+        ew_light = simulation.traffic_lights['ew']
         
-        # Check if we've reached our destination
-        if self.position == self.destination:
-            if self.is_at_edge():
-                self.state = "arrived"
-                return True
+        # Check if we need to stop for a red light
+        should_stop_for_light = False
+        if self.position in ['north', 'south'] and ns_light == 'red':
+            should_stop_for_light = True
+        elif self.position in ['east', 'west'] and ew_light == 'red':
+            should_stop_for_light = True
         
-        # Get current position index in route
-        try:
-            current_idx = self.route.index(self.position)
-            if current_idx >= len(self.route) - 1:
-                return False
+        # Check if we need to stop for other vehicles
+        should_stop_for_vehicle = False
+        for other in simulation.vehicles:
+            if other != self and other.is_ahead(self) and self.distance_to(other) < 50:
+                should_stop_for_vehicle = True
+                break
+        
+        # Update state based on conditions
+        if should_stop_for_light or should_stop_for_vehicle:
+            self.state = "waiting"
+            self.speed = 0
+        else:
+            self.state = "moving"
+            self.speed = self.base_speed
+        
+        # Update position time and check for position change
+        if self.state == "moving":
+            self.position_time += self.speed
             
-            # Get next position
-            next_pos = self.route[current_idx + 1]
-            
-            # Get current and next coordinates
-            current_coords = self.get_current_coords()
-            next_coords = self.get_next_coords(next_pos)
-            
-            if not current_coords or not next_coords:
-                return False
-            
-            # Check if we need to stop
-            should_stop = False
-            
-            # Stop at red or yellow light if approaching intersection
-            if self.position in ['north', 'south', 'east', 'west'] and next_pos == 'intersection':
-                ns_light, ew_light = light_state
-                if ((self.position in ['north', 'south'] and ns_light in ["red", "yellow"]) or
-                    (self.position in ['east', 'west'] and ew_light in ["red", "yellow"])):
-                    should_stop = True
-                    self.state = "waiting"
-                    self.waiting_time += 1
+            # Check if we've reached the next position
+            if self.position_time >= self.position_threshold:
+                self.position_time = 0
+                
+                # Get current route index
+                current_idx = self.route.index(self.position)
+                
+                # Move to next position if available
+                if current_idx + 1 < len(self.route):
+                    self.position = self.route[current_idx + 1]
+                else:
+                    # Reached destination
+                    self.state = "arrived"
                     self.speed = 0
-                    return False
-            
-            # Check for vehicles ahead if provided
-            if not should_stop and vehicles:
-                for other_vehicle in vehicles:
-                    if other_vehicle != self and other_vehicle.state != "arrived":
-                        if self.is_behind(other_vehicle):
-                            should_stop = True
-                            self.state = "waiting"
-                            self.waiting_time += 1
-                            self.speed = 0
-                            return False
-            
-            # Update position if not stopped
-            if not should_stop:
-                self.state = "moving"
-                self.waiting_time = 0
-                
-                # Update position time
-                self.position_time += self.speed
-                
-                # Calculate progress
-                progress = min(self.position_time / self.position_threshold, 1.0)
-                
-                # Calculate new interpolated position
-                new_x = current_coords[0] + (next_coords[0] - current_coords[0]) * progress
-                new_y = current_coords[1] + (next_coords[1] - current_coords[1]) * progress
-                
-                # Store new interpolated position
-                self.interpolated_position = (new_x, new_y)
-                
-                # Move to next position when threshold is reached
-                if progress >= 1.0:
-                    self.position = next_pos
-                    self.position_time = 0
-                    
-                    # Check for arrival at destination
-                    if self.position == self.destination and self.is_at_edge():
-                        self.state = "arrived"
-                        return True
-                    
-                    return True
-            
-            return False
-            
-        except ValueError as e:
-            return False
+        
+        # Update commute time
+        self.commute_time += 1
     
     def check_collision_ahead(self):
         """This will be set by the simulation to check for collisions"""

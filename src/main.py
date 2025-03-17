@@ -59,40 +59,17 @@ class SimulationThread(QThread):
         self.wait()
 
 def main():
-    # Initialize PyQt application first
-    app = QApplication(sys.argv)
-    
-    # Create simulation and data recorder
+    """Main entry point for the traffic simulation"""
+    pygame.init()
     simulation = Simulation()
-    data_recorder = DataRecorder()
     
-    # Connect data recorder to simulation
-    simulation.set_data_recorder(data_recorder)
+    # Set test mode flag
+    simulation.test_mode = True
     
-    # Create the control window
-    main_window = MainWindow(simulation)
+    # Run test mode
+    simulation.run_test_mode()
     
-    # Create and start the simulation thread
-    sim_thread = SimulationThread(simulation, data_recorder)
-    
-    # Connect signals from simulation thread to main window
-    sim_thread.metrics_updated.connect(main_window.metrics_panel.update_metrics)
-    sim_thread.traffic_updated.connect(main_window.visualization_panel.update_traffic_plot)
-    
-    # Show the main window
-    main_window.show()
-    main_window.raise_()
-    
-    # Start the simulation thread
-    sim_thread.start()
-    
-    # Run the PyQt event loop
-    exit_code = app.exec_()
-    
-    # Clean up when application exits
-    sim_thread.stop()
-    
-    sys.exit(exit_code)
+    pygame.quit()
 
 if __name__ == "__main__":
     main() 
